@@ -46,6 +46,17 @@ api.interceptors.response.use(
   }
 );
 
+// Test connection function
+export const testConnection = async () => {
+  try {
+    const response = await api.get('/health');
+    return response.data;
+  } catch (error) {
+    console.error('Connection test failed:', error);
+    throw error;
+  }
+};
+
 // Types
 export interface Product {
   id: string;
@@ -281,5 +292,9 @@ export const dashboardApi = {
 export const healthApi = {
   check: () => api.get('/health'),
 };
+
+// Convenience functions for common API calls
+export const getDashboardData = () => dashboardApi.getStats();
+export const getProducts = () => productsApi.getAll();
 
 export default api;

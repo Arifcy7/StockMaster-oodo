@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Filter, Download } from "lucide-react";
+import { Plus, Search, Filter, Download, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -13,65 +14,144 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  category: string;
+  stock: number;
+  unit: string;
+  status: string;
+  location: string;
+}
+
 const Products = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data - will be replaced with MongoDB data via Flask API
-  const products = [
-    {
-      id: "1",
-      name: "Steel Rods",
-      sku: "STL-001",
-      category: "Raw Materials",
-      stock: 250,
-      unit: "kg",
-      status: "In Stock",
-      location: "Warehouse A",
-    },
-    {
-      id: "2",
-      name: "Office Chairs",
-      sku: "OFC-205",
-      category: "Furniture",
-      stock: 45,
-      unit: "units",
-      status: "In Stock",
-      location: "Warehouse B",
-    },
-    {
-      id: "3",
-      name: "Laptop Batteries",
-      sku: "BAT-102",
-      category: "Electronics",
-      stock: 8,
-      unit: "units",
-      status: "Low Stock",
-      location: "Main Store",
-    },
-    {
-      id: "4",
-      name: "Paint Cans",
-      sku: "PNT-450",
-      category: "Supplies",
-      stock: 0,
-      unit: "liters",
-      status: "Out of Stock",
-      location: "Storage Room",
-    },
-  ];
+  // Load products from backend
+  useEffect(() => {
+    loadProducts();
+  }, []);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "In Stock":
-        return "bg-success text-success-foreground";
-      case "Low Stock":
-        return "bg-warning text-warning-foreground";
-      case "Out of Stock":
-        return "bg-destructive text-destructive-foreground";
-      default:
-        return "bg-muted text-muted-foreground";
+  const loadProducts = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Fetch products from backend
+      const response = await fetch('http://localhost:5000/api/products');
+      const data = await response.json();
+      
+      if (response.ok) {
+        setProducts(data.products || []);
+        toast.success('Products loaded successfully!');
+      } else {
+        throw new Error(data.message || 'Failed to load products');
+      }
+    } catch (error: any) {
+      console.error('Failed to load products:', error);
+      setError('Failed to load products from backend');
+      toast.error('Failed to load products. Using demo data.');
+      
+      // Fallback to demo data
+      setProducts([
+        {
+          id: "1",
+          name: "Steel Rods",
+          sku: "STL-001",
+          category: "Raw Materials",
+          stock: 250,
+          unit: "kg",
+          status: "In Stock",
+          location: "Warehouse A",
+        },
+        {
+          id: "2",
+          name: "Aluminum Sheets",
+          sku: "ALU-002",
+          category: "Raw Materials",
+          stock: 15,
+          unit: "pieces",
+          status: "Low Stock",
+          location: "Warehouse B",
+        },
+        {
+          id: "3",
+          name: "Plastic Containers",
+          sku: "PLS-003",
+          category: "Packaging",
+          stock: 500,
+          unit: "pieces",
+          status: "In Stock",
+          location: "Warehouse C",
+        },
+        {
+          id: "4",
+          name: "Copper Wire",
+          sku: "COP-004",
+          category: "Electrical",
+          stock: 0,
+          unit: "meters",
+          status: "Out of Stock",
+          location: "Warehouse A",
+        },
+        {
+          id: "5",
+          name: "Glass Panels",
+          sku: "GLS-005",
+          category: "Components",
+          stock: 75,
+          unit: "pieces",
+          status: "In Stock",
+          location: "Warehouse D",
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  // Filter products based on search query
+  const filteredProducts = products.filter((product) =>
+    product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    product.category.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "in stock":
+        return "default";
+      case "low stock":
+        return "secondary";
+      case "out of stock":
+        return "destructive";
+      default:
+        return "outline";
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Products</h1>
+            <p className="text-muted-foreground mt-1">
+              Loading product inventory...
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <span className="ml-2">Loading products...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -80,106 +160,137 @@ const Products = () => {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Products</h1>
           <p className="text-muted-foreground mt-1">
-            Manage your product inventory and stock levels
+            Manage your product inventory
+            {error && (
+              <span className="text-orange-500 ml-2">({error})</span>
+            )}
           </p>
         </div>
-        <Button className="bg-gradient-primary">
-          <Plus className="mr-2 h-4 w-4" />
-          Add Product
-        </Button>
+
+        <div className="flex items-center gap-4">
+          <Button size="sm" variant="outline">
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
+          <Button size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Product
+          </Button>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={loadProducts}
+            disabled={isLoading}
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
-      <Card className="shadow-card">
+      <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 relative">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search products by name, SKU, or category..."
+                placeholder="Search products, SKU, or category..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
               />
             </div>
-            <Button variant="outline">
-              <Filter className="mr-2 h-4 w-4" />
+            <Button variant="outline" size="sm">
+              <Filter className="h-4 w-4 mr-2" />
               Filters
-            </Button>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              Export
             </Button>
           </div>
         </CardContent>
       </Card>
 
       {/* Products Table */}
-      <Card className="shadow-card">
-        <CardContent className="pt-6">
+      <Card>
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Product Name</TableHead>
+                <TableHead>Product</TableHead>
                 <TableHead>SKU</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Stock</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Location</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {products.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{product.sku}</TableCell>
-                  <TableCell>{product.category}</TableCell>
-                  <TableCell className="font-semibold">{product.stock}</TableCell>
-                  <TableCell className="text-muted-foreground">{product.unit}</TableCell>
-                  <TableCell>{product.location}</TableCell>
-                  <TableCell>
-                    <Badge className={getStatusColor(product.status)}>
-                      {product.status}
-                    </Badge>
+              {filteredProducts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8">
+                    {searchQuery ? "No products found matching your search." : "No products available."}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
+                </TableRow>
+              ) : (
+                filteredProducts.map((product) => (
+                  <TableRow key={product.id}>
+                    <TableCell className="font-medium">{product.name}</TableCell>
+                    <TableCell className="font-mono text-sm">{product.sku}</TableCell>
+                    <TableCell>{product.category}</TableCell>
+                    <TableCell>
+                      {product.stock} {product.unit}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getStatusBadgeVariant(product.status) as any}>
+                        {product.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{product.location}</TableCell>
+                    <TableCell>
                       <Button variant="ghost" size="sm">
                         Edit
                       </Button>
-                      <Button variant="ghost" size="sm">
-                        View
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
-      {/* MongoDB Integration Notice */}
-      <Card className="border-info/20 bg-info/5">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-4">
-            <div className="rounded-lg bg-info/10 p-3">
-              <Plus className="h-6 w-6 text-info" />
+      {/* Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{products.length}</div>
+            <p className="text-xs text-muted-foreground">Total Products</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">
+              {products.filter(p => p.status === "In Stock").length}
             </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-foreground mb-2">
-                MongoDB Integration Point
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Product data will be fetched from MongoDB via Flask API endpoints. 
-                CRUD operations (Create, Read, Update, Delete) are ready to be connected.
-              </p>
+            <p className="text-xs text-muted-foreground">In Stock</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-orange-600">
+              {products.filter(p => p.status === "Low Stock").length}
             </div>
-          </div>
-        </CardContent>
-      </Card>
+            <p className="text-xs text-muted-foreground">Low Stock</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-red-600">
+              {products.filter(p => p.status === "Out of Stock").length}
+            </div>
+            <p className="text-xs text-muted-foreground">Out of Stock</p>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

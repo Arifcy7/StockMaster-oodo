@@ -1,46 +1,149 @@
+import { useState, useEffect } from "react";
 import { Package, AlertTriangle, PackageOpen, Truck, ArrowRightLeft } from "lucide-react";
 import { KPICard } from "@/components/Dashboard/KPICard";
 import { RecentActivity } from "@/components/Dashboard/RecentActivity";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { getDashboardData } from "@/services/api";
 
 const Dashboard = () => {
-  // Mock data - will be replaced with Firebase/MongoDB data
-  const kpiData = [
+  const [kpiData, setKpiData] = useState([
     {
       title: "Total Products in Stock",
-      value: "1,234",
+      value: "Loading...",
       icon: Package,
-      trend: { value: "+12% from last month", isPositive: true },
+      trend: { value: "Loading...", isPositive: true },
       variant: 'default' as const,
     },
     {
       title: "Low Stock Items",
-      value: "23",
+      value: "Loading...",
       icon: AlertTriangle,
-      trend: { value: "Requires attention", isPositive: false },
+      trend: { value: "Checking...", isPositive: false },
       variant: 'warning' as const,
     },
     {
       title: "Pending Receipts",
-      value: "15",
+      value: "Loading...",
       icon: PackageOpen,
       variant: 'info' as const,
     },
     {
       title: "Pending Deliveries",
-      value: "8",
+      value: "Loading...",
       icon: Truck,
       variant: 'success' as const,
     },
     {
       title: "Internal Transfers",
-      value: "5",
+      value: "Loading...",
       icon: ArrowRightLeft,
       variant: 'default' as const,
     },
-  ];
+  ]);
+  
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Try to get dashboard data from backend
+      const response = await getDashboardData();
+      const dashboardData = response.data;
+      
+      // Update KPI data with real data from backend
+      setKpiData([
+        {
+          title: "Total Products in Stock",
+          value: dashboardData.products?.total?.toString() || "0",
+          icon: Package,
+          trend: { 
+            value: dashboardData.products?.trend?.value || `${dashboardData.products?.in_stock || 0} in stock`, 
+            isPositive: dashboardData.products?.trend?.is_positive ?? true 
+          },
+          variant: 'default' as const,
+        },
+        {
+          title: "Low Stock Items",
+          value: dashboardData.products?.low_stock?.toString() || "0",
+          icon: AlertTriangle,
+          trend: { value: "Requires attention", isPositive: false },
+          variant: 'warning' as const,
+        },
+        {
+          title: "Pending Receipts",
+          value: dashboardData.operations?.pending_receipts?.toString() || "0",
+          icon: PackageOpen,
+          variant: 'info' as const,
+        },
+        {
+          title: "Pending Deliveries",
+          value: dashboardData.operations?.pending_deliveries?.toString() || "0",
+          icon: Truck,
+          variant: 'success' as const,
+        },
+        {
+          title: "Internal Transfers",
+          value: dashboardData.operations?.internal_transfers?.toString() || "0",
+          icon: ArrowRightLeft,
+          variant: 'default' as const,
+        },
+      ]);
+      
+      toast.success("Dashboard data loaded successfully!");
+    } catch (error: any) {
+      console.error("Failed to load dashboard data:", error);
+      setError("Failed to load dashboard data");
+      toast.error("Failed to load dashboard data. Using demo data.");
+      
+      // Fallback to demo data
+      setKpiData([
+        {
+          title: "Total Products in Stock",
+          value: "1,234",
+          icon: Package,
+          trend: { value: "+12% from last month", isPositive: true },
+          variant: 'default' as const,
+        },
+        {
+          title: "Low Stock Items",
+          value: "23",
+          icon: AlertTriangle,
+          trend: { value: "Requires attention", isPositive: false },
+          variant: 'warning' as const,
+        },
+        {
+          title: "Pending Receipts",
+          value: "15",
+          icon: PackageOpen,
+          variant: 'info' as const,
+        },
+        {
+          title: "Pending Deliveries",
+          value: "8",
+          icon: Truck,
+          variant: 'success' as const,
+        },
+        {
+          title: "Internal Transfers",
+          value: "5",
+          icon: ArrowRightLeft,
+          variant: 'default' as const,
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">

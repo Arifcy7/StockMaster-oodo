@@ -7,6 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Package, Mail, Lock, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/services/firebase";
 import {
   Select,
   SelectContent,
@@ -18,29 +20,67 @@ import {
 const Auth = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const [loginData, setLoginData] = useState({ email: "", password: "" });
+  const [signupData, setSignupData] = useState({ 
+    email: "", 
+    password: "", 
+    firstName: "", 
+    lastName: "", 
+    role: "",
+    department: "" 
+  });
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // TODO: Integrate with Firebase Authentication
-    setTimeout(() => {
-      toast.success("Login successful!");
+    try {
+      const userCredential = await signInWithEmailAndPassword(
+        auth, 
+        loginData.email, 
+        loginData.password
+      );
+      
+      toast.success(`Welcome back, ${userCredential.user.email}!`);
       navigate("/dashboard");
+    } catch (error: any) {
+      console.error("Login error:", error);
+      toast.error(error.message || "Login failed. Please try again.");
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // TODO: Integrate with Firebase Authentication
-    setTimeout(() => {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        signupData.email,
+        signupData.password
+      );
+      
+      // TODO: Save additional user data to backend
+      const userData = {
+        uid: userCredential.user.uid,
+        email: signupData.email,
+        firstName: signupData.firstName,
+        lastName: signupData.lastName,
+        role: signupData.role,
+        department: signupData.department
+      };
+      
+      console.log("User data to save:", userData);
       toast.success("Account created successfully!");
       navigate("/dashboard");
+    } catch (error: any) {
+      console.error("Signup error:", error);
+      toast.error(error.message || "Signup failed. Please try again.");
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -84,6 +124,8 @@ const Auth = () => {
                         type="email"
                         placeholder="your@email.com"
                         className="pl-9"
+                        value={loginData.email}
+                        onChange={(e) => setLoginData(prev => ({ ...prev, email: e.target.value }))}
                         required
                       />
                     </div>
@@ -98,6 +140,8 @@ const Auth = () => {
                         type="password"
                         placeholder="••••••••"
                         className="pl-9"
+                        value={loginData.password}
+                        onChange={(e) => setLoginData(prev => ({ ...prev, password: e.target.value }))}
                         required
                       />
                     </div>
@@ -123,15 +167,31 @@ const Auth = () => {
 
               <TabsContent value="signup">
                 <form onSubmit={handleSignup} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-name">Full Name</Label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-firstname">First Name</Label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          id="signup-firstname"
+                          type="text"
+                          placeholder="John"
+                          className="pl-9"
+                          value={signupData.firstName}
+                          onChange={(e) => setSignupData(prev => ({ ...prev, firstName: e.target.value }))}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-lastname">Last Name</Label>
                       <Input
-                        id="signup-name"
+                        id="signup-lastname"
                         type="text"
-                        placeholder="John Doe"
-                        className="pl-9"
+                        placeholder="Doe"
+                        value={signupData.lastName}
+                        onChange={(e) => setSignupData(prev => ({ ...prev, lastName: e.target.value }))}
                         required
                       />
                     </div>
@@ -146,6 +206,24 @@ const Auth = () => {
                         type="email"
                         placeholder="your@email.com"
                         className="pl-9"
+                        value={signupData.email}
+                        onChange={(e) => setSignupData(prev => ({ ...prev, email: e.target.value }))}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password">Password</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-password"
+                        type="password"
+                        placeholder="••••••••"
+                        className="pl-9"
+                        value={signupData.password}
+                        onChange={(e) => setSignupData(prev => ({ ...prev, password: e.target.value }))}
                         required
                       />
                     </div>
@@ -153,7 +231,7 @@ const Auth = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="signup-role">Role</Label>
-                    <Select required>
+                    <Select value={signupData.role} onValueChange={(value) => setSignupData(prev => ({ ...prev, role: value }))}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select your role" />
                       </SelectTrigger>
@@ -161,6 +239,21 @@ const Auth = () => {
                         <SelectItem value="admin">Admin</SelectItem>
                         <SelectItem value="manager">Inventory Manager</SelectItem>
                         <SelectItem value="staff">Warehouse Staff</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-department">Department</Label>
+                    <Select value={signupData.department} onValueChange={(value) => setSignupData(prev => ({ ...prev, department: value }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select your department" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="warehouse">Warehouse</SelectItem>
+                        <SelectItem value="procurement">Procurement</SelectItem>
+                        <SelectItem value="sales">Sales</SelectItem>
+                        <SelectItem value="logistics">Logistics</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

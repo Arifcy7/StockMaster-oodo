@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Package, ArrowRight, Shield, Users, BarChart3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { runIntegrationTest } from "@/utils/integration-test";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -39,6 +40,14 @@ const Index = () => {
               onClick={() => navigate('/dashboard')}
             >
               View Demo
+            </Button>
+            <Button 
+              size="lg" 
+              variant="outline"
+              className="text-lg px-8 border-green-500 text-green-600 hover:bg-green-50"
+              onClick={runIntegrationTest}
+            >
+              Test Integration
             </Button>
           </div>
         </div>

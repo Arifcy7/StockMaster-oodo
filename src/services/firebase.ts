@@ -3,15 +3,15 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
 
-// Your web app's Firebase configuration
+// Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyADzGE45IbxoX3SJaNTmpNmHV9_BIuf5vI",
-  authDomain: "shopping-app-5779c.firebaseapp.com",
-  projectId: "shopping-app-5779c",
-  storageBucket: "shopping-app-5779c.firebasestorage.app",
-  messagingSenderId: "304259006496",
-  appId: "1:304259006496:web:3855d5994725a25df83c45",
-  measurementId: "G-CRJ5NFE43C"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
