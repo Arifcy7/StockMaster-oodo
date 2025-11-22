@@ -24,14 +24,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { authService } from "@/services/firebaseService";
+import { User as FirebaseUser } from "firebase/auth";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 interface TopNavbarProps {
-  userRole?: 'admin' | 'inventory_manager' | 'warehouse_staff';
-  userName?: string;
-  userEmail?: string;
+  userRole?: 'admin' | 'inventory_manager' | 'warehouse_staff' | null;
+  currentUser?: FirebaseUser | null;
 }
 
-export const TopNavbar = ({ userRole = 'warehouse_staff', userName = 'John Doe', userEmail = 'john@example.com' }: TopNavbarProps) => {
+export const TopNavbar = ({ userRole, currentUser }: TopNavbarProps) => {
+  const navigate = useNavigate();
+  
   const allNavItems = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/products", label: "Products", icon: Package },
@@ -44,6 +49,19 @@ export const TopNavbar = ({ userRole = 'warehouse_staff', userName = 'John Doe',
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
+
+  const handleLogout = async () => {
+    try {
+      await authService.signOut();
+      toast.success('Logged out successfully');
+      navigate('/auth'); // Redirect to sign up/login page
+    } catch (error: any) {
+      toast.error('Failed to logout: ' + error.message);
+    }
+  };
+
+  const userName = currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User';
+  const userEmail = currentUser?.email || '';
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -75,55 +93,60 @@ export const TopNavbar = ({ userRole = 'warehouse_staff', userName = 'John Doe',
 
         {/* User Profile */}
         <div className="flex items-center gap-4">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="flex items-center gap-2 h-auto py-2">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                    {getInitials(userName)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="hidden md:flex flex-col items-start">
-                  <span className="text-sm font-medium text-foreground">{userName}</span>
-                  <span className="text-xs text-muted-foreground capitalize">{userRole}</span>
-                </div>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{userName}</p>
-                  <p className="text-xs text-muted-foreground">{userEmail}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{userRole} Role</p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <NavLink to="/profile" className="flex items-center cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  <span>My Profile</span>
-                </NavLink>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <NavLink to="/settings" className="flex items-center cursor-pointer">
-                  <Settings className="mr-2 h-4 w-4" />
-                  <span>Settings</span>
-                </NavLink>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => {
-                  // TODO: Integrate with Firebase logout
-                  console.log('Logout clicked');
-                }}
-                className="cursor-pointer text-destructive focus:text-destructive"
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Logout</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {currentUser && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="flex items-center gap-2 h-auto py-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                      {getInitials(userName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="hidden md:flex flex-col items-start">
+                    <span className="text-sm font-medium text-foreground">{userName}</span>
+                    <span className="text-xs text-muted-foreground capitalize">
+                      {userRole || 'User'}
+                      {userRole === 'admin' && ' 🔑'}
+                    </span>
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">{userName}</p>
+                    <p className="text-xs text-muted-foreground">{userEmail}</p>
+                    <p className="text-xs text-muted-foreground capitalize">
+                      {userRole || 'User'} Role
+                      {userRole === 'admin' && ' (Administrator)'}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <NavLink to="/profile" className="flex items-center cursor-pointer">
+                    <User className="mr-2 h-4 w-4" />
+                    <span>My Profile</span>
+                  </NavLink>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <NavLink to="/settings" className="flex items-center cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>Settings</span>
+                  </NavLink>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={handleLogout}
+                  className="cursor-pointer text-destructive focus:text-destructive"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
     </header>

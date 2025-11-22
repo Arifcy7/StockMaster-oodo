@@ -10,6 +10,7 @@ import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/aut
 import { auth } from "@/firebase/config";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { mockFirestore } from "@/lib/mockFirebase";
+import { authService } from "@/services/firebaseService";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -23,47 +24,69 @@ const Auth = () => {
     setIsLoading(true);
 
     try {
+      // Authenticate with Firebase Auth
       const userCredential = await signInWithEmailAndPassword(
         auth, 
         loginData.email, 
         loginData.password
       );
       
-      // Check if user profile exists in Firebase
+      // Check if user profile exists in Firestore
       try {
-        const usersQuery = await mockFirestore.collection('users')
-          .where('email', '==', loginData.email)
-          .get();
+        const userProfile = await authService.checkUserProfile(loginData.email);
         
-        if (usersQuery.docs.length === 0) {
+        if (!userProfile) {
           // First-time user - redirect to profile setup
           toast.success("Welcome! Please complete your profile setup.");
           navigate("/profile-setup", { 
             state: { 
               email: userCredential.user.email,
+              uid: userCredential.user.uid,
               isFirstTime: true 
             } 
           });
         } else {
-          // Existing user - get their data
-          const userData = usersQuery.docs[0].data();
+          // Existing user - store their data from Firestore
           localStorage.setItem('currentUser', JSON.stringify({
-            ...userData,
-            id: usersQuery.docs[0].id,
+            ...userProfile,
             uid: userCredential.user.uid
           }));
           
-          toast.success(`Welcome back, ${userData.firstName || userData.name}!`);
+          console.log('✅ User logged in successfully:', {
+            email: userProfile.email,
+            name: userProfile.name,
+            role: userProfile.role
+          });
+          
+          toast.success(`Welcome back, ${userProfile.firstName}! 🎉`);
           navigate("/dashboard");
         }
       } catch (profileError) {
         console.error("Profile check failed:", profileError);
+        // Fallback to basic login if Firestore check fails
+        localStorage.setItem('currentUser', JSON.stringify({
+          email: userCredential.user.email,
+          uid: userCredential.user.uid,
+          name: userCredential.user.displayName || userCredential.user.email
+        }));
         toast.success(`Welcome back, ${userCredential.user.email}!`);
         navigate("/dashboard");
       }
     } catch (error: any) {
       console.error("Login error:", error);
-      toast.error(error.message || "Login failed. Please try again.");
+      let errorMessage = "Login failed. Please try again.";
+      
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = "No account found with this email address.";
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = "Incorrect password. Please try again.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email address format.";
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = "Too many failed attempts. Please try again later.";
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }

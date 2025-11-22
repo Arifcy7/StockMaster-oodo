@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Download, Filter, Loader2, RefreshCw } from "lucide-react";
+import { Search, Download, Filter, Loader2, RefreshCw, FileText } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -13,27 +13,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { mockFirestore } from "@/lib/mockFirebase";
-// import { db } from "@/lib/firebase";
-// import { collection, getDocs, query, orderBy, onSnapshot } from "firebase/firestore";
+import { operationsService, MovementHistory } from "@/services/firebaseService";
+import { generateMovementHistoryReport } from "../lib/pdfExport";
 
-interface Movement {
-  id: string;
-  product_name: string;
-  sku: string;
-  type: 'receipt' | 'delivery' | 'transfer' | 'adjustment';
-  quantity: number;
-  from_location: string | null;
-  to_location: string | null;
-  reference: string;
-  notes: string;
-  user_name: string;
-  timestamp: string;
-}
+
 
 const History = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [movements, setMovements] = useState<Movement[]>([]);
+  const [movements, setMovements] = useState<MovementHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,15 +33,9 @@ const History = () => {
       setIsLoading(true);
       setError(null);
       
-      // Use mock Firebase for development
-      const result = await mockFirestore.collection('movements').orderBy('timestamp', 'desc').get();
-      const movementData = result.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Movement[];
-      
+      const movementData = await operationsService.getAllMovements();
       setMovements(movementData);
-      toast.success(`Loaded ${movementData.length} movement records from Firebase!`);
+      toast.success(`Loaded ${movementData.length} movement records from Firestore!`);
       
     } catch (error: any) {
       console.error('Failed to load movement history:', error);
@@ -68,6 +49,46 @@ const History = () => {
 
   const handleRefresh = () => {
     loadMovementHistory();
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      setIsLoading(true);
+      toast.info('Generating PDF report...');
+      
+      // Use filtered movements if search is active
+      const exportData = searchQuery ? filteredMovements : movements;
+      
+      if (exportData.length === 0) {
+        toast.error('No data to export');
+        return;
+      }
+      
+      await generateMovementHistoryReport(exportData, searchQuery ? { search: searchQuery } : null);
+      toast.success('PDF report downloaded successfully!');
+    } catch (error: any) {
+      console.error('Failed to generate PDF:', error);
+      toast.error('Failed to generate PDF: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const formatFirebaseTimestamp = (timestamp: any): string => {
+    try {
+      if (timestamp?.toDate) {
+        return timestamp.toDate().toLocaleString();
+      }
+      if (timestamp?.seconds) {
+        return new Date(timestamp.seconds * 1000).toLocaleString();
+      }
+      if (typeof timestamp === 'string') {
+        return new Date(timestamp).toLocaleString();
+      }
+      return new Date().toLocaleString();
+    } catch (error) {
+      return new Date().toLocaleString();
+    }
   };
 
   // Filter movements based on search query
@@ -117,13 +138,26 @@ const History = () => {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-          <Button variant="outline">
-            <Filter className="mr-2 h-4 w-4" />
+          <Button variant="outline" className="gap-2">
+            <Filter className="h-4 w-4" />
             Filter
           </Button>
-          <Button variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Export
+          <Button 
+            onClick={handleExportPDF} 
+            disabled={isLoading || movements.length === 0}
+            className="gap-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4" />
+                Export PDF
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -166,7 +200,7 @@ const History = () => {
               {filteredMovements.map((movement) => (
                 <TableRow key={movement.id}>
                   <TableCell className="text-muted-foreground">
-                    {new Date(movement.timestamp).toLocaleString()}
+                    {formatFirebaseTimestamp(movement.timestamp)}
                   </TableCell>
                   <TableCell>
                     <Badge className={getTypeColor(movement.type)}>

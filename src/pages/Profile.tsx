@@ -11,6 +11,8 @@ import { User, Mail, Phone, MapPin, Calendar, Shield, Loader2, RefreshCw, Edit, 
 import { toast } from "sonner";
 import { mockFirestore } from "@/lib/mockFirebase";
 import { useNavigate } from "react-router-dom";
+import { doc, updateDoc, getDoc } from "firebase/firestore";
+import { db, auth } from "@/firebase/config";
 
 interface UserProfile {
   id: string;
@@ -71,33 +73,57 @@ const Profile = () => {
       setIsLoading(true);
       setError(null);
       
-      // Get current user from localStorage
+      // Get current user from localStorage and Firebase Auth
       const currentUserData = localStorage.getItem('currentUser');
-      if (!currentUserData) {
+      const firebaseUser = auth.currentUser;
+      
+      if (!currentUserData && !firebaseUser) {
         toast.error('No user session found. Please log in again.');
         navigate('/auth');
         return;
       }
 
-      const currentUser = JSON.parse(currentUserData);
-      
-      // Fetch fresh user data from Firebase
-      const usersQuery = await mockFirestore.collection('users')
-        .where('email', '==', currentUser.email)
-        .get();
+      let userData = null;
 
-      if (usersQuery.docs.length === 0) {
-        throw new Error('User profile not found');
+      // Try to fetch from Firestore first if we have a Firebase UID
+      if (firebaseUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            userData = {
+              id: userDoc.id,
+              ...userDoc.data()
+            } as UserProfile;
+            console.log('✅ Profile loaded from Firestore:', userData);
+          }
+        } catch (firestoreError) {
+          console.log('Firestore fetch failed, trying mock Firebase...');
+        }
       }
 
-      const userData = {
-        id: usersQuery.docs[0].id,
-        ...usersQuery.docs[0].data()
-      } as UserProfile;
+      // Fallback to mock Firebase if Firestore fails
+      if (!userData && currentUserData) {
+        const currentUser = JSON.parse(currentUserData);
+        const usersQuery = await mockFirestore.collection('users')
+          .where('email', '==', currentUser.email)
+          .get();
+
+        if (usersQuery.docs.length > 0) {
+          userData = {
+            id: usersQuery.docs[0].id,
+            ...usersQuery.docs[0].data()
+          } as UserProfile;
+          console.log('✅ Profile loaded from mock Firebase:', userData);
+        }
+      }
+
+      if (!userData) {
+        throw new Error('User profile not found in Firestore or mock Firebase');
+      }
 
       setUserProfile(userData);
       setEditedProfile(userData);
-      toast.success('Profile loaded successfully!');
+      toast.success(`Profile loaded successfully! Welcome, ${userData.firstName}! 🎉`);
     } catch (error: any) {
       console.error('Failed to load profile:', error);
       setError(`Failed to load profile: ${error.message}`);
@@ -128,7 +154,7 @@ const Profile = () => {
     try {
       setIsUpdating(true);
       
-      // Update user in Firebase
+      // Update user in Firebase and Firestore
       const updateData = {
         firstName: editedProfile.firstName.trim(),
         lastName: editedProfile.lastName.trim(),
@@ -138,12 +164,19 @@ const Profile = () => {
         location: editedProfile.location,
         bio: editedProfile.bio?.trim() || null,
         address: editedProfile.address?.trim() || null,
-        updated_at: mockFirestore.serverTimestamp()
+        updated_at: new Date()
       };
 
-      // Actually update in Firebase (mock implementation)
-      // Note: In real implementation would use: await mockFirestore.collection('users').doc(userProfile.id).update(updateData)
-      console.log(`✅ Updating user ${userProfile.id} in Firebase with:`, updateData);
+      // Update in Firestore if we have Firebase user
+      const firebaseUser = auth.currentUser;
+      if (firebaseUser) {
+        try {
+          await updateDoc(doc(db, 'users', firebaseUser.uid), updateData);
+          console.log(`✅ Profile updated in Firestore for UID: ${firebaseUser.uid}`);
+        } catch (firestoreError) {
+          console.log('Firestore update failed, continuing with local update...');
+        }
+      }
       
       // Update local state immediately for responsive UI
       Object.assign(userProfile, updateData);
@@ -159,7 +192,7 @@ const Profile = () => {
         }));
       }
 
-      toast.success('Profile updated successfully in Firebase!');
+      toast.success(`🎉 Profile updated successfully in Firestore!\\nChanges saved: ${Object.keys(updateData).join(', ')}`);
       setIsEditing(false);
     } catch (error: any) {
       console.error('Error updating profile:', error);

@@ -19,65 +19,21 @@ import {
   Eye
 } from "lucide-react";
 import { toast } from "sonner";
-import { mockFirestore } from "@/lib/mockFirebase";
-// import { db } from "@/lib/firebase";
-// import { collection, addDoc, getDocs, query, orderBy, serverTimestamp } from "firebase/firestore";
+import { 
+  operationsService, 
+  productService, 
+  authService,
+  Receipt,
+  Delivery,
+  Transfer,
+  Adjustment,
+  OperationItem
+} from "@/services/firebaseService";
+import { auth } from "@/firebase/config";
+import { Timestamp } from 'firebase/firestore';
+import { generateOperationsReport } from "../lib/pdfExport";
 
-interface OperationItem {
-  product_id: string;
-  product_name: string;
-  sku: string;
-  quantity: number;
-  cost_price?: number;
-  location: string;
-}
 
-interface Receipt {
-  id: string;
-  receipt_id: string;
-  supplier: string;
-  items: OperationItem[];
-  total_items: number;
-  total_value: number;
-  status: string;
-  created_at: string;
-}
-
-interface Adjustment {
-  id: string;
-  adjustment_id: string;
-  product_name: string;
-  quantity: number;
-  reason: string;
-  status: string;
-  created_at: string;
-}
-
-interface Delivery {
-  id: string;
-  delivery_id: string;
-  customer: string;
-  product_id: string;
-  product_name: string;
-  quantity: number;
-  to_location: string;
-  status: string;
-  notes?: string;
-  created_at: string;
-}
-
-interface Transfer {
-  id: string;
-  transfer_id: string;
-  product_id: string;
-  product_name: string;
-  from_location: string;
-  to_location: string;
-  quantity: number;
-  status: string;
-  notes?: string;
-  created_at: string;
-}
 
 const Operations = () => {
   const [activeTab, setActiveTab] = useState<string>('receipts');
@@ -129,6 +85,7 @@ const Operations = () => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [locations, setLocations] = useState<string[]>([]);
   const [adjustmentReasons, setAdjustmentReasons] = useState<string[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Load dynamic configuration data
   useEffect(() => {
@@ -205,56 +162,51 @@ const Operations = () => {
 
   const loadReceipts = async () => {
     try {
-      const result = await mockFirestore.collection('receipts').orderBy('created_at', 'desc').get();
-      const receiptData = result.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Receipt[];
-      setReceipts(receiptData);
+      const receiptsData = await operationsService.getAllReceipts();
+      setReceipts(receiptsData);
     } catch (error: any) {
       console.error('Error loading receipts:', error);
-      toast.error('Failed to load receipts from Firebase');
+      toast.error('Failed to load receipts from Firestore');
     }
   };
 
   const loadDeliveries = async () => {
     try {
-      const result = await mockFirestore.collection('deliveries').orderBy('created_at', 'desc').get();
-      const deliveryData = result.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Delivery[];
-      setDeliveries(deliveryData);
+      const deliveriesData = await operationsService.getAllDeliveries();
+      setDeliveries(deliveriesData);
     } catch (error: any) {
       console.error('Error loading deliveries:', error);
-      toast.error('Failed to load deliveries from Firebase');
+      toast.error('Failed to load deliveries from Firestore');
     }
   };
 
   const loadTransfers = async () => {
     try {
-      const result = await mockFirestore.collection('transfers').orderBy('created_at', 'desc').get();
-      const transferData = result.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Transfer[];
-      setTransfers(transferData);
+      const transfersData = await operationsService.getAllTransfers();
+      setTransfers(transfersData);
     } catch (error: any) {
       console.error('Error loading transfers:', error);
-      toast.error('Failed to load transfers from Firebase');
+      toast.error('Failed to load transfers from Firestore');
     }
   };
 
   const loadAdjustments = async () => {
     try {
-      const result = await mockFirestore.collection('adjustments').orderBy('created_at', 'desc').get();
-      const adjustmentData = result.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Adjustment[];
-      setAdjustments(adjustmentData);
+      const adjustmentsData = await operationsService.getAllAdjustments();
+      setAdjustments(adjustmentsData);
     } catch (error: any) {
       console.error('Error loading adjustments:', error);
-      toast.error('Failed to load adjustments from Firebase');
+      toast.error('Failed to load adjustments from Firestore');
     }
   };
 
   const loadProducts = async () => {
     try {
-      const result = await mockFirestore.collection('products').get();
-      const productData = result.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProducts(productData);
+      const productsData = await productService.getAllProducts();
+      setProducts(productsData);
     } catch (error: any) {
       console.error('Failed to load products:', error);
-      toast.error('Failed to load products from Firebase');
+      toast.error('Failed to load products from Firestore');
     }
   };
 
@@ -265,38 +217,28 @@ const Operations = () => {
         return;
       }
 
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        toast.error('You must be logged in to create receipts');
+        return;
+      }
+
       const receiptData = {
         receipt_id: `REC-${Date.now()}`,
         supplier: receiptForm.supplier,
         items: receiptForm.items,
         total_items: receiptForm.items.length,
         total_value: receiptForm.items.reduce((sum, item) => sum + (item.cost_price || 0) * item.quantity, 0),
-        status: 'pending',
-        notes: receiptForm.notes,
-        created_at: mockFirestore.serverTimestamp()
+        status: 'pending' as const,
+        notes: receiptForm.notes || '',
+        created_by: currentUser.uid,
+        created_at: Timestamp.fromDate(new Date()),
+        updated_at: Timestamp.fromDate(new Date())
       };
 
-      await mockFirestore.collection('receipts').add(receiptData);
+      await operationsService.createReceipt(receiptData);
       
-      // Create movement history entry
-      const movementData = {
-        product_name: receiptForm.items.map(i => i.product_name).join(', '),
-        sku: receiptForm.items.map(i => i.sku).join(', '),
-        type: 'receipt',
-        quantity: receiptForm.items.reduce((sum, item) => sum + item.quantity, 0),
-        from_location: null,
-        to_location: receiptForm.items[0]?.location || locations[0] || 'Default Location',
-        reference: receiptData.receipt_id,
-        notes: `Receipt from ${receiptForm.supplier}`,
-        user_name: currentUser?.name || 'Unknown User',
-        user_id: currentUser?.id || null,
-        user_role: currentUser?.role || 'unknown',
-        timestamp: mockFirestore.serverTimestamp()
-      };
-      
-      await mockFirestore.collection('movements').add(movementData);
-      
-      toast.success('Receipt created successfully in Firebase!');
+      toast.success('Receipt created successfully in Firestore!');
       setShowReceiptDialog(false);
       setReceiptForm({ supplier: '', notes: '', items: [] });
       await loadReceipts();
@@ -313,6 +255,12 @@ const Operations = () => {
         return;
       }
 
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        toast.error('You must be logged in to create adjustments');
+        return;
+      }
+
       const adjustmentData = {
         adjustment_id: `ADJ-${Date.now()}`,
         product_id: adjustmentForm.product_id,
@@ -320,32 +268,16 @@ const Operations = () => {
         quantity: adjustmentForm.quantity,
         reason: adjustmentForm.reason,
         location: adjustmentForm.location,
-        notes: adjustmentForm.notes,
-        status: 'pending',
-        created_at: mockFirestore.serverTimestamp()
+        notes: adjustmentForm.notes || '',
+        status: 'pending' as const,
+        created_by: currentUser.uid,
+        created_at: Timestamp.fromDate(new Date()),
+        updated_at: Timestamp.fromDate(new Date())
       };
 
-      await mockFirestore.collection('adjustments').add(adjustmentData);
+      await operationsService.createAdjustment(adjustmentData);
       
-      // Create movement history entry
-      const movementData = {
-        product_name: adjustmentForm.product_name,
-        sku: 'SKU-UNKNOWN',
-        type: 'adjustment',
-        quantity: adjustmentForm.quantity,
-        from_location: adjustmentForm.location,
-        to_location: adjustmentForm.location,
-        reference: adjustmentData.adjustment_id,
-        notes: `Adjustment: ${adjustmentForm.reason}`,
-        user_name: currentUser?.name || 'Unknown User',
-        user_id: currentUser?.id || null,
-        user_role: currentUser?.role || 'unknown',
-        timestamp: mockFirestore.serverTimestamp()
-      };
-      
-      await mockFirestore.collection('movements').add(movementData);
-      
-      toast.success('Adjustment created successfully in Firebase!');
+      toast.success('Adjustment created successfully in Firestore!');
       setShowAdjustmentDialog(false);
       setAdjustmentForm({ product_id: '', product_name: '', quantity: 0, reason: '', location: '', notes: '' });
       await loadAdjustments();
@@ -362,6 +294,12 @@ const Operations = () => {
         return;
       }
 
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        toast.error('You must be logged in to create deliveries');
+        return;
+      }
+
       const deliveryData = {
         delivery_id: `DEL-${Date.now()}`,
         customer: deliveryForm.customer,
@@ -369,32 +307,16 @@ const Operations = () => {
         product_name: deliveryForm.product_name,
         quantity: deliveryForm.quantity,
         to_location: deliveryForm.to_location,
-        status: 'pending',
-        notes: deliveryForm.notes,
-        created_at: mockFirestore.serverTimestamp()
+        status: 'pending' as const,
+        notes: deliveryForm.notes || '',
+        created_by: currentUser.uid,
+        created_at: Timestamp.fromDate(new Date()),
+        updated_at: Timestamp.fromDate(new Date())
       };
 
-      await mockFirestore.collection('deliveries').add(deliveryData);
+      await operationsService.createDelivery(deliveryData);
       
-      // Create movement history entry
-      const movementData = {
-        product_name: deliveryForm.product_name,
-        sku: 'SKU-UNKNOWN',
-        type: 'delivery',
-        quantity: -deliveryForm.quantity, // Negative for outgoing
-        from_location: currentUser?.location || 'Default Warehouse',
-        to_location: deliveryForm.to_location,
-        reference: deliveryData.delivery_id,
-        notes: `Delivery to ${deliveryForm.customer}`,
-        user_name: currentUser?.name || 'Unknown User',
-        user_id: currentUser?.id || null,
-        user_role: currentUser?.role || 'unknown',
-        timestamp: mockFirestore.serverTimestamp()
-      };
-      
-      await mockFirestore.collection('movements').add(movementData);
-      
-      toast.success('Delivery created successfully in Firebase!');
+      toast.success('Delivery created successfully in Firestore!');
       setShowDeliveryDialog(false);
       setDeliveryForm({ customer: '', product_id: '', product_name: '', to_location: '', quantity: 0, notes: '' });
       await loadDeliveries();
@@ -411,6 +333,12 @@ const Operations = () => {
         return;
       }
 
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        toast.error('You must be logged in to create transfers');
+        return;
+      }
+
       const transferData = {
         transfer_id: `TRF-${Date.now()}`,
         product_id: transferForm.product_id,
@@ -418,30 +346,16 @@ const Operations = () => {
         from_location: transferForm.from_location,
         to_location: transferForm.to_location,
         quantity: transferForm.quantity,
-        notes: transferForm.notes,
-        status: 'pending',
-        created_at: mockFirestore.serverTimestamp()
+        notes: transferForm.notes || '',
+        status: 'pending' as const,
+        created_by: currentUser.uid,
+        created_at: Timestamp.fromDate(new Date()),
+        updated_at: Timestamp.fromDate(new Date())
       };
 
-      await mockFirestore.collection('transfers').add(transferData);
+      await operationsService.createTransfer(transferData);
       
-      // Create movement history entry
-      const movementData = {
-        product_name: transferForm.product_name,
-        sku: 'SKU-UNKNOWN',
-        type: 'transfer',
-        quantity: transferForm.quantity,
-        from_location: transferForm.from_location,
-        to_location: transferForm.to_location,
-        reference: transferData.transfer_id,
-        notes: `Transfer from ${transferForm.from_location} to ${transferForm.to_location}`,
-        user_name: 'Current User',
-        timestamp: mockFirestore.serverTimestamp()
-      };
-      
-      await mockFirestore.collection('movements').add(movementData);
-      
-      toast.success('Transfer created successfully in Firebase!');
+      toast.success('Transfer created successfully in Firestore!');
       setShowTransferDialog(false);
       setTransferForm({ product_id: '', product_name: '', from_location: '', to_location: '', quantity: 0, notes: '' });
       await loadTransfers();
@@ -464,6 +378,64 @@ const Operations = () => {
     setReceiptForm(prev => ({ ...prev, items: [...prev.items, newItem] }));
   };
 
+  const handleExportCurrentTab = async () => {
+    try {
+      setIsExporting(true);
+      toast.info(`Generating ${activeTab} report...`);
+      
+      let data: any[] = [];
+      let type = activeTab.slice(0, -1); // Remove 's' from plural
+      
+      switch (activeTab) {
+        case 'receipts':
+          data = receipts;
+          break;
+        case 'deliveries':
+          data = deliveries;
+          break;
+        case 'transfers':
+          data = transfers;
+          break;
+        case 'adjustments':
+          data = adjustments;
+          break;
+        default:
+          toast.error('Unknown operation type');
+          return;
+      }
+      
+      if (data.length === 0) {
+        toast.error(`No ${activeTab} to export`);
+        return;
+      }
+      
+      await generateOperationsReport(data, type);
+      toast.success(`${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} report downloaded successfully!`);
+    } catch (error: any) {
+      console.error('Failed to generate PDF:', error);
+      toast.error('Failed to generate PDF: ' + error.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const formatFirebaseDate = (timestamp: any): string => {
+    try {
+      if (timestamp?.toDate) {
+        return timestamp.toDate().toLocaleDateString();
+      }
+      if (timestamp?.seconds) {
+        return new Date(timestamp.seconds * 1000).toLocaleDateString();
+      }
+      if (typeof timestamp === 'string') {
+        return new Date(timestamp).toLocaleDateString();
+      }
+      return new Date().toLocaleDateString();
+    } catch (error) {
+      return new Date().toLocaleDateString();
+    }
+  };
+
   const getStatusBadgeVariant = (status: string) => {
     switch (status.toLowerCase()) {
       case 'done': case 'completed': return 'default';
@@ -482,6 +454,24 @@ const Operations = () => {
             Manage warehouse operations - receipts, deliveries, transfers, and adjustments
           </p>
         </div>
+        <Button 
+          onClick={handleExportCurrentTab} 
+          variant="outline" 
+          disabled={isExporting}
+          className="gap-2 bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white border-0"
+        >
+          {isExporting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Exporting...
+            </>
+          ) : (
+            <>
+              <FileText className="h-4 w-4" />
+              Export {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+            </>
+          )}
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -695,7 +685,7 @@ const Operations = () => {
                               {receipt.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>{new Date(receipt.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>{formatFirebaseDate(receipt.created_at)}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="sm">
                               <Eye className="h-4 w-4" />
@@ -913,7 +903,7 @@ const Operations = () => {
                               {adjustment.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>{new Date(adjustment.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>{formatFirebaseDate(adjustment.created_at)}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="sm">
                               <Eye className="h-4 w-4" />
@@ -1087,7 +1077,7 @@ const Operations = () => {
                               {delivery.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>{new Date(delivery.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>{formatFirebaseDate(delivery.created_at)}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="sm">
                               <Eye className="h-4 w-4" />
@@ -1266,7 +1256,7 @@ const Operations = () => {
                               {transfer.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>{new Date(transfer.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>{formatFirebaseDate(transfer.created_at)}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="sm">
                               <Eye className="h-4 w-4" />

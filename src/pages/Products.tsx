@@ -22,33 +22,14 @@ import {
   Eye,
   PackageOpen,
   Truck,
-  ArrowRightLeft
+  ArrowRightLeft,
+  FileText
 } from "lucide-react";
 import { toast } from "sonner";
+import { productService, Product } from "@/services/firebaseService";
+import { generateProductReport } from "../lib/pdfExport";
 
-// Use mock Firebase for development consistency
-import { mockFirestore } from "@/lib/mockFirebase";
 
-// Product interface for StockMaster
-export interface Product {
-  id?: string;
-  name: string;
-  sku: string;
-  category: string;
-  stock: number;
-  unit: string;
-  status: string;
-  location: string;
-  reorder_level: number;
-  supplier: string;
-  cost_price: number;
-  selling_price: number;
-  description: string;
-  image_url?: string;
-  created_by?: string;
-  created_at?: string;
-  updated_at?: string;
-}
 
 // Extended Product interface for display purposes
 interface ProductDisplay extends Product {
@@ -146,12 +127,7 @@ const Products = () => {
       setIsLoading(true);
       setError(null);
       
-      // Use mock Firebase for development
-      const result = await mockFirestore.collection('products').orderBy('created_at', 'desc').get();
-      const productsData = result.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Product[];
+      const productsData = await productService.getAllProducts();
       
       // Transform Firebase data and calculate display status based on stock levels
       const transformedProducts: ProductDisplay[] = productsData.map(product => {
@@ -171,13 +147,13 @@ const Products = () => {
 
       setProductsList(transformedProducts);
       if (transformedProducts.length > 0) {
-        toast.success(`Loaded ${transformedProducts.length} products from Firebase`);
+        toast.success(`Loaded ${transformedProducts.length} products from Firestore`);
       } else {
         toast.info('No products found - add your first product');
       }
     } catch (error: any) {
       console.error('Failed to load products:', error);
-      setError('Failed to load products from Firebase');
+      setError('Failed to load products from Firestore');
       toast.error('Failed to load products: ' + error.message);
       setProductsList([]);
     } finally {
@@ -216,22 +192,13 @@ const Products = () => {
       };
 
       if (editingProduct?.id) {
-        // Update existing product using mock Firebase
-        // Note: In real implementation would update in Firebase
-        const updatedProducts = productsList.map(p => 
-          p.id === editingProduct.id ? { ...p, ...productData, id: editingProduct.id } : p
-        );
-        setProductsList(updatedProducts.map(product => {
-          let display_status: 'In Stock' | 'Low Stock' | 'Out of Stock' = 'In Stock';
-          if (product.stock === 0) display_status = 'Out of Stock';
-          else if (product.stock <= product.reorder_level) display_status = 'Low Stock';
-          return { ...product, display_status };
-        }));
-        toast.success('Product updated successfully in Firebase!');
+        // Update existing product using Firebase
+        await productService.updateProduct(editingProduct.id, productData);
+        toast.success('Product updated successfully in Firestore!');
       } else {
-        // Create new product using mock Firebase
-        const result = await mockFirestore.collection('products').add(productData);
-        toast.success('Product created successfully in Firebase!');
+        // Create new product using Firebase
+        await productService.createProduct(productData);
+        toast.success('Product created successfully in Firestore!');
       }
 
       setIsDialogOpen(false);
@@ -275,14 +242,35 @@ const Products = () => {
     }
 
     try {
-      // Delete from mock Firebase and update local state
-      // Note: In real implementation would delete from Firebase
-      const updatedProducts = productsList.filter(p => p.id !== productId);
-      setProductsList(updatedProducts);
-      toast.success('Product deleted successfully from Firebase!');
+      await productService.deleteProduct(productId);
+      toast.success('Product deleted successfully from Firestore!');
+      await loadProducts(); // Reload products list
     } catch (error: any) {
       console.error('Failed to delete product:', error);
       toast.error('Failed to delete product: ' + error.message);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      setIsSubmitting(true);
+      toast.info('Generating product report...');
+      
+      // Use filtered products if any filters are applied
+      const exportData = filteredProducts.length > 0 ? filteredProducts : productsList;
+      
+      if (exportData.length === 0) {
+        toast.error('No products to export');
+        return;
+      }
+      
+      await generateProductReport(exportData);
+      toast.success('Product report downloaded successfully!');
+    } catch (error: any) {
+      console.error('Failed to generate PDF:', error);
+      toast.error('Failed to generate PDF: ' + error.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -467,10 +455,30 @@ const Products = () => {
           )}
         </div>
         
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Product
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={handleExportPDF} 
+            variant="outline" 
+            disabled={isSubmitting || productsList.length === 0}
+            className="gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <FileText className="h-4 w-4" />
+                Export PDF
+              </>
+            )}
+          </Button>
+          <Button onClick={() => setIsDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Product
+          </Button>
+        </div>
       </div>
 
       {/* Product Creation/Edit Dialog */}

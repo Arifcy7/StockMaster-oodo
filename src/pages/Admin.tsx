@@ -9,8 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Shield, Users, Settings, Database, Activity, Plus, UserPlus, Loader2, Eye, EyeOff, Search, Edit } from "lucide-react";
 import { toast } from "sonner";
 import { mockFirestore } from "@/lib/mockFirebase";
-// import { db } from "@/lib/firebase";
-// import { collection, addDoc, getDocs, query, orderBy, serverTimestamp } from "firebase/firestore";
+// Real Firebase imports for authentication
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/firebase/config";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "@/firebase/config";
 import {
   Table,
   TableBody,
@@ -221,11 +224,18 @@ const Admin = () => {
       setIsCreating(true);
       setError(null);
 
-      // TODO: In production, use Firebase Auth createUserWithEmailAndPassword
-      // const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
+      // Create user in Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(
+        auth, 
+        newUser.email.trim(), 
+        newUser.password
+      );
       
-      // Create user profile in Firebase Firestore
+      const firebaseUser = userCredential.user;
+      
+      // Create user profile in Firestore
       const userData = {
+        uid: firebaseUser.uid,
         firstName: newUser.firstName.trim(),
         lastName: newUser.lastName.trim(),
         name: `${newUser.firstName.trim()} ${newUser.lastName.trim()}`,
@@ -235,22 +245,47 @@ const Admin = () => {
         location: newUser.location.trim() || null,
         phone: newUser.phone.trim() || null,
         status: 'active',
-        created_at: mockFirestore.serverTimestamp(),
-        updated_at: mockFirestore.serverTimestamp(),
-        password_hash: '[MOCK_HASH]', // In production, this would be handled by Firebase Auth
-        auth_uid: `mock_${Date.now()}` // Mock UID for development
+        created_at: new Date(),
+        updated_at: new Date(),
+        created_by: auth.currentUser?.uid || 'admin'
       };
 
-      const result = await mockFirestore.collection('users').add(userData);
-      console.log(`✅ User created in Firebase with ID: ${result.id}`);
+      // Store in Firestore with user's UID as document ID
+      await setDoc(doc(db, 'users', firebaseUser.uid), userData);
+      
+      // Also store in mock Firebase for development consistency
+      await mockFirestore.collection('users').add({
+        ...userData,
+        firebase_uid: firebaseUser.uid
+      });
+      
+      console.log(`✅ User created successfully:`, {
+        firebaseAuth: firebaseUser.uid,
+        firestoreDoc: userData
+      });
 
-      toast.success(`User "${newUser.firstName} ${newUser.lastName}" created successfully in Firebase`);
+      toast.success(
+        `User "${newUser.firstName} ${newUser.lastName}" created successfully!\n` +
+        `Firebase Auth UID: ${firebaseUser.uid}\n` +
+        `Stored in Firestore and can now log in.`
+      );
+      
       resetForm();
       setIsDialogOpen(false);
       await loadUsers(); // Reload users list
     } catch (error: any) {
       console.error('Error creating user:', error);
-      toast.error(error.message || 'Failed to create user in Firebase');
+      let errorMessage = 'Failed to create user';
+      
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'Email address is already in use';
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password is too weak (minimum 6 characters)';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address format';
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setIsCreating(false);
     }
@@ -275,35 +310,41 @@ const Admin = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Shield className="h-8 w-8 text-primary" />
-            Admin Dashboard
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage users and system settings
-            {error && (
-              <span className="text-orange-500 ml-2">({error})</span>
-            )}
-          </p>
-        </div>
+    <div className="space-y-8 p-6">
+      {/* Enhanced Header with Gradient */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-8 text-white shadow-2xl">
+        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm"></div>
+        <div className="relative z-10">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold flex items-center gap-3">
+                <div className="rounded-xl bg-white/20 p-3 backdrop-blur-sm">
+                  <Shield className="h-8 w-8" />
+                </div>
+                Admin Dashboard
+              </h1>
+              <p className="text-white/90 mt-3 text-lg">
+                Manage users, roles, and system settings with enterprise-grade controls
+                {error && (
+                  <span className="block text-yellow-200 text-sm mt-1 font-medium">⚠️ {error}</span>
+                )}
+              </p>
+            </div>
 
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <UserPlus className="h-4 w-4 mr-2" />
-              Add User
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Create New User</DialogTitle>
-              <DialogDescription>
-                Create a new user account with Firebase authentication and system access.
-              </DialogDescription>
-            </DialogHeader>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="lg" className="bg-white text-indigo-600 hover:bg-white/90 shadow-lg font-semibold">
+                  <UserPlus className="h-5 w-5 mr-2" />
+                  Add New User
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Create New User</DialogTitle>
+                  <DialogDescription>
+                    Create a new user account with Firebase authentication and system access.
+                  </DialogDescription>
+                </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
@@ -430,51 +471,61 @@ const Admin = () => {
             </div>
           </DialogContent>
         </Dialog>
+          </div>
+        </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+      {/* Enhanced Stats Cards with Gradients */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Users</p>
-                <p className="text-2xl font-bold">{users.length}</p>
+                <p className="text-blue-100 text-sm font-medium">Total Users</p>
+                <p className="text-3xl font-bold">{users.length}</p>
               </div>
-              <Users className="h-8 w-8 text-primary" />
+              <div className="rounded-lg bg-white/20 p-3">
+                <Users className="h-8 w-8" />
+              </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Active Users</p>
-                <p className="text-2xl font-bold">{users.filter(u => u.status === 'active').length}</p>
+                <p className="text-green-100 text-sm font-medium">Active Users</p>
+                <p className="text-3xl font-bold">{users.filter(u => u.status === 'active').length}</p>
               </div>
-              <Activity className="h-8 w-8 text-success" />
+              <div className="rounded-lg bg-white/20 p-3">
+                <Activity className="h-8 w-8" />
+              </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Admins</p>
-                <p className="text-2xl font-bold">{users.filter(u => u.role === 'admin').length}</p>
+                <p className="text-purple-100 text-sm font-medium">Admins</p>
+                <p className="text-3xl font-bold">{users.filter(u => u.role === 'admin').length}</p>
               </div>
-              <Shield className="h-8 w-8 text-destructive" />
+              <div className="rounded-lg bg-white/20 p-3">
+                <Shield className="h-8 w-8" />
+              </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Departments</p>
-                <p className="text-2xl font-bold">{new Set(users.map(u => u.department)).size}</p>
+                <p className="text-orange-100 text-sm font-medium">Departments</p>
+                <p className="text-3xl font-bold">{new Set(users.map(u => u.department)).size}</p>
               </div>
-              <Database className="h-8 w-8 text-info" />
+              <div className="rounded-lg bg-white/20 p-3">
+                <Database className="h-8 w-8" />
+              </div>
             </div>
           </CardContent>
         </Card>

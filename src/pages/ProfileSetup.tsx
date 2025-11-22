@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Package, User, MapPin, Phone, Building, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { mockFirestore } from "@/lib/mockFirebase";
+import { doc, setDoc, Timestamp } from "firebase/firestore";
+import { db } from "@/firebase/config";
 
 interface ProfileData {
   firstName: string;
@@ -37,6 +39,7 @@ const ProfileSetup = () => {
   });
 
   const email = location.state?.email || "";
+  const uid = location.state?.uid || "";
   const isFirstTime = location.state?.isFirstTime || false;
 
   const departments = [
@@ -111,6 +114,7 @@ const ProfileSetup = () => {
       setIsLoading(true);
 
       const userData = {
+        uid: uid,
         firstName: profileData.firstName.trim(),
         lastName: profileData.lastName.trim(),
         name: `${profileData.firstName.trim()} ${profileData.lastName.trim()}`,
@@ -122,13 +126,23 @@ const ProfileSetup = () => {
         bio: profileData.bio?.trim() || null,
         address: profileData.address?.trim() || null,
         status: 'active',
-        created_at: mockFirestore.serverTimestamp(),
-        updated_at: mockFirestore.serverTimestamp(),
-        last_login: mockFirestore.serverTimestamp(),
+        created_at: Timestamp.now(),
+        updated_at: Timestamp.now(),
+        last_login: Timestamp.now(),
         is_first_login: false
       };
 
-      const result = await mockFirestore.collection('users').add(userData);
+      // Store in Firestore with UID as document ID
+      if (uid) {
+        await setDoc(doc(db, 'users', uid), userData);
+        console.log(`✅ User profile saved to Firestore:`, userData);
+      }
+      
+      // Also store in mock Firebase for development consistency
+      const result = await mockFirestore.collection('users').add({
+        ...userData,
+        firebase_uid: uid
+      });
       
       // Store user data in localStorage for the session
       localStorage.setItem('currentUser', JSON.stringify({
@@ -136,11 +150,11 @@ const ProfileSetup = () => {
         id: result.id
       }));
 
-      toast.success(`Welcome to StockMaster, ${profileData.firstName}!`);
+      toast.success(`🎉 Welcome to StockMaster, ${profileData.firstName}!\\nProfile saved successfully in Firestore.`);
       navigate("/dashboard");
     } catch (error: any) {
       console.error('Error saving profile:', error);
-      toast.error('Failed to save profile. Please try again.');
+      toast.error('Failed to save profile to Firestore. Please try again.');
     } finally {
       setIsLoading(false);
     }
