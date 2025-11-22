@@ -13,18 +13,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { auth } from "@/firebase/config";
+import { mockFirestore } from "@/lib/mockFirebase";
+// import { db } from "@/lib/firebase";
+// import { collection, getDocs, query, orderBy, onSnapshot } from "firebase/firestore";
 
 interface Movement {
   id: string;
-  date: string;
+  product_name: string;
+  sku: string;
   type: 'receipt' | 'delivery' | 'transfer' | 'adjustment';
-  product: string;
-  quantity: string;
-  from: string;
-  to: string;
-  user: string;
+  quantity: number;
+  from_location: string | null;
+  to_location: string | null;
   reference: string;
+  notes: string;
+  user_name: string;
+  timestamp: string;
 }
 
 const History = () => {
@@ -42,36 +46,21 @@ const History = () => {
       setIsLoading(true);
       setError(null);
       
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error('Authentication required');
-      }
-
-      const token = await user.getIdToken();
-      const response = await fetch('http://localhost:5000/api/movements', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      // Use mock Firebase for development
+      const result = await mockFirestore.collection('movements').orderBy('timestamp', 'desc').get();
+      const movementData = result.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Movement[];
       
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setMovements(data.movements || []);
-          toast.success(`Loaded ${data.movements?.length || 0} movement records successfully!`);
-        } else {
-          throw new Error(data.message || 'Failed to load movement history');
-        }
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Server error occurred');
-      }
+      setMovements(movementData);
+      toast.success(`Loaded ${movementData.length} movement records from Firebase!`);
+      
     } catch (error: any) {
       console.error('Failed to load movement history:', error);
       setError(`Failed to load movement history: ${error.message}`);
       toast.error(`Failed to load history: ${error.message}`);
-      setMovements([]); // No fallback data - completely dynamic
+      setMovements([]);
     } finally {
       setIsLoading(false);
     }
@@ -83,9 +72,10 @@ const History = () => {
 
   // Filter movements based on search query
   const filteredMovements = movements.filter(movement =>
-    movement.product.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    movement.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     movement.reference.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    movement.user.toLowerCase().includes(searchQuery.toLowerCase())
+    movement.user_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    movement.sku.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const getTypeColor = (type: string) => {
@@ -175,19 +165,26 @@ const History = () => {
             <TableBody>
               {filteredMovements.map((movement) => (
                 <TableRow key={movement.id}>
-                  <TableCell className="text-muted-foreground">{movement.date}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {new Date(movement.timestamp).toLocaleString()}
+                  </TableCell>
                   <TableCell>
                     <Badge className={getTypeColor(movement.type)}>
                       {movement.type}
                     </Badge>
                   </TableCell>
-                  <TableCell className="font-medium">{movement.product}</TableCell>
-                  <TableCell className={movement.quantity.startsWith('+') ? 'text-success font-semibold' : movement.quantity.startsWith('-') ? 'text-destructive font-semibold' : 'font-semibold'}>
-                    {movement.quantity}
+                  <TableCell className="font-medium">
+                    <div>
+                      <div>{movement.product_name}</div>
+                      <div className="text-xs text-muted-foreground">{movement.sku}</div>
+                    </div>
                   </TableCell>
-                  <TableCell>{movement.from}</TableCell>
-                  <TableCell>{movement.to}</TableCell>
-                  <TableCell className="text-muted-foreground">{movement.user}</TableCell>
+                  <TableCell className={movement.quantity > 0 ? 'text-success font-semibold' : movement.quantity < 0 ? 'text-destructive font-semibold' : 'font-semibold'}>
+                    {movement.quantity > 0 ? `+${movement.quantity}` : movement.quantity}
+                  </TableCell>
+                  <TableCell>{movement.from_location || '-'}</TableCell>
+                  <TableCell>{movement.to_location || '-'}</TableCell>
+                  <TableCell className="text-muted-foreground">{movement.user_name}</TableCell>
                   <TableCell>
                     <Button variant="link" className="h-auto p-0 text-primary">
                       {movement.reference}

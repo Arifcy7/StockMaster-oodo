@@ -8,9 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Shield, Users, Settings, Database, Activity, Plus, UserPlus, Loader2, Eye, EyeOff, Search, Edit } from "lucide-react";
 import { toast } from "sonner";
-import { mockFirestore } from "@/lib/mockFirebase";
-// import { db } from "@/lib/firebase";
-// import { collection, addDoc, getDocs, query, orderBy, serverTimestamp } from "firebase/firestore";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/firebase/config";
 import {
   Table,
   TableBody,
@@ -128,38 +127,23 @@ const Admin = () => {
       setIsLoading(true);
       setError(null);
       
-      // Use mock Firebase for development
-      const result = await mockFirestore.collection('users').orderBy('created_at', 'desc').get();
+      const response = await fetch('http://localhost:5000/api/users');
+      const data = await response.json();
       
-      const userData = result.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          firstName: data.firstName || data.name?.split(' ')[0] || '',
-          lastName: data.lastName || data.name?.split(' ').slice(1).join(' ') || '',
-          name: data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim(),
-          email: data.email,
-          role: data.role,
-          department: data.department,
-          location: data.location,
-          phone: data.phone,
-          status: data.status || 'active',
-          created_at: data.created_at?.toISOString() || new Date().toISOString(),
-          updated_at: data.updated_at?.toISOString(),
-          last_login: data.last_login?.toISOString()
-        };
-      }) as User[];
-      
-      setUsers(userData);
-      if (userData.length > 0) {
-        toast.success(`Loaded ${userData.length} users from Firebase`);
+      if (response.ok && data.success) {
+        setUsers(data.users || []);
+        if (data.users && data.users.length > 0) {
+          toast.success(`Loaded ${data.users.length} users`);
+        } else {
+          toast.info('No users found - database is empty');
+        }
       } else {
-        toast.info('No users found - Firebase collection is empty');
+        throw new Error(data.message || 'Failed to load users');
       }
     } catch (error: any) {
       console.error('Error loading users:', error);
-      setError('Failed to connect to Firebase');
-      toast.error('Failed to load users from Firebase');
+      setError('Failed to connect to backend');
+      toast.error('Failed to load users from database');
       setUsers([]);
     } finally {
       setIsLoading(false);
@@ -221,36 +205,51 @@ const Admin = () => {
       setIsCreating(true);
       setError(null);
 
-      // TODO: In production, use Firebase Auth createUserWithEmailAndPassword
-      // const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
-      
-      // Create user profile in Firebase Firestore
+      // Create Firebase authentication account
+      const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
+      const firebaseUser = userCredential.user;
+
+      // Create user profile in backend
       const userData = {
+        firebase_uid: firebaseUser.uid,
         firstName: newUser.firstName.trim(),
         lastName: newUser.lastName.trim(),
-        name: `${newUser.firstName.trim()} ${newUser.lastName.trim()}`,
         email: newUser.email.trim(),
         role: newUser.role,
         department: newUser.department.trim(),
         location: newUser.location.trim() || null,
         phone: newUser.phone.trim() || null,
         status: 'active',
-        created_at: mockFirestore.serverTimestamp(),
-        updated_at: mockFirestore.serverTimestamp(),
-        password_hash: '[MOCK_HASH]', // In production, this would be handled by Firebase Auth
-        auth_uid: `mock_${Date.now()}` // Mock UID for development
+        created_at: new Date().toISOString()
       };
 
-      const result = await mockFirestore.collection('users').add(userData);
-      console.log(`✅ User created in Firebase with ID: ${result.id}`);
+      const response = await fetch('http://localhost:5000/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData)
+      });
 
-      toast.success(`User "${newUser.firstName} ${newUser.lastName}" created successfully in Firebase`);
-      resetForm();
-      setIsDialogOpen(false);
-      await loadUsers(); // Reload users list
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        toast.success(`User "${newUser.firstName} ${newUser.lastName}" created successfully`);
+        resetForm();
+        setIsDialogOpen(false);
+        await loadUsers(); // Reload users list
+      } else {
+        throw new Error(result.message || 'Failed to create user profile');
+      }
     } catch (error: any) {
       console.error('Error creating user:', error);
-      toast.error(error.message || 'Failed to create user in Firebase');
+      if (error.code === 'auth/email-already-in-use') {
+        toast.error('Email is already registered');
+      } else if (error.code === 'auth/weak-password') {
+        toast.error('Password is too weak');
+      } else if (error.code === 'auth/invalid-email') {
+        toast.error('Invalid email address');
+      } else {
+        toast.error(error.message || 'Failed to create user');
+      }
     } finally {
       setIsCreating(false);
     }

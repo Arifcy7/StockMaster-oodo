@@ -9,17 +9,20 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import Operations from "./pages/Operations";
+import Receipts from "./pages/Receipts";
 import Admin from "./pages/Admin";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
+import ProfileSetup from "./pages/ProfileSetup";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 const App = () => {
-  // TODO: Get actual user role from Firebase Authentication
-  const userRole: 'admin' | 'manager' | 'staff' = 'admin';
+  // TODO: Get actual user role from Firebase Authentication with proper role checking
+  // Three roles as per StockMaster spec: 'admin' | 'inventory_manager' | 'warehouse_staff'
+  const userRole: 'admin' | 'inventory_manager' | 'warehouse_staff' = 'admin';
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -30,9 +33,11 @@ const App = () => {
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/profile-setup" element={<ProfileSetup />} />
             <Route path="/dashboard" element={<MainLayout userRole={userRole}><Dashboard /></MainLayout>} />
             <Route path="/products" element={<MainLayout userRole={userRole}><Products /></MainLayout>} />
             <Route path="/operations/*" element={<MainLayout userRole={userRole}><Operations /></MainLayout>} />
+            <Route path="/receipts" element={<MainLayout userRole={userRole}><Receipts /></MainLayout>} />
             <Route path="/admin" element={<MainLayout userRole={userRole}><Admin /></MainLayout>} />
             <Route path="/history" element={<MainLayout userRole={userRole}><History /></MainLayout>} />
             <Route path="/settings" element={<MainLayout userRole={userRole}><Settings /></MainLayout>} />

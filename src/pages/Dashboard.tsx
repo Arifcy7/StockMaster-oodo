@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { dashboard } from "@/services/firebase";
+import { mockFirestore } from "@/lib/mockFirebase";
 
 const Dashboard = () => {
   const [kpiData, setKpiData] = useState([
@@ -18,7 +18,7 @@ const Dashboard = () => {
       variant: 'default' as const,
     },
     {
-      title: "Low Stock Items",
+      title: "Low Stock / Out of Stock Items",
       value: "Loading...",
       icon: AlertTriangle,
       trend: { value: "Checking...", isPositive: false },
@@ -28,18 +28,21 @@ const Dashboard = () => {
       title: "Pending Receipts",
       value: "Loading...",
       icon: PackageOpen,
+      trend: { value: "Incoming goods", isPositive: true },
       variant: 'info' as const,
     },
     {
       title: "Pending Deliveries",
       value: "Loading...",
       icon: Truck,
+      trend: { value: "Outgoing orders", isPositive: true },
       variant: 'success' as const,
     },
     {
-      title: "Internal Transfers",
+      title: "Internal Transfers Scheduled",
       value: "Loading...",
       icon: ArrowRightLeft,
+      trend: { value: "Between locations", isPositive: true },
       variant: 'default' as const,
     },
   ]);
@@ -56,73 +59,106 @@ const Dashboard = () => {
       setIsLoading(true);
       setError(null);
       
-      // Get dashboard data from Firebase
-      const dashboardData = await dashboard.getStats();
+      // Get dashboard data from mock Firebase
+      const [productsResult, usersResult, receiptsResult, deliveriesResult, transfersResult, movementsResult] = await Promise.all([
+        mockFirestore.collection('products').get(),
+        mockFirestore.collection('users').get(),
+        mockFirestore.collection('receipts').get(),
+        mockFirestore.collection('deliveries').get(), 
+        mockFirestore.collection('transfers').get(),
+        mockFirestore.collection('movements').orderBy('timestamp', 'desc').get()
+      ]);
+
+      const products = productsResult.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const users = usersResult.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const receipts = receiptsResult.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const deliveries = deliveriesResult.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const transfers = transfersResult.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      console.log('Dashboard data received:', dashboardData);
+      console.log('Dashboard data loaded:', { products: products.length, users: users.length });
       
-      // Update KPI data with real data from Firebase
+      // Calculate stats from Firebase data
+      const inStock = products.filter(p => p.stock > p.reorder_level).length;
+      const lowStock = products.filter(p => p.stock <= p.reorder_level && p.stock > 0).length;
+      const outOfStock = products.filter(p => p.stock === 0).length;
+      const pendingReceipts = receipts.filter(r => r.status === 'pending').length;
+      const pendingDeliveries = deliveries.filter(d => d.status === 'pending').length;
+      const pendingTransfers = transfers.filter(t => t.status === 'pending').length;
+      
+      // Update KPI data with real data from Firebase - Following StockMaster spec exactly
       setKpiData([
         {
           title: "Total Products in Stock",
-          value: dashboardData.products?.total?.toString() || "0",
+          value: products.length.toString(),
           icon: Package,
           trend: { 
-            value: dashboardData.products?.trend?.value || `${dashboardData.products?.in_stock || 0} in stock`, 
-            isPositive: dashboardData.products?.trend?.is_positive ?? true 
+            value: `${inStock} items available`, 
+            isPositive: true 
           },
           variant: 'default' as const,
         },
         {
-          title: "Low Stock Items",
-          value: dashboardData.products?.low_stock?.toString() || "0",
+          title: "Low Stock / Out of Stock Items",
+          value: (lowStock + outOfStock).toString(),
           icon: AlertTriangle,
           trend: { 
-            value: dashboardData.products?.low_stock > 0 ? "Requires attention" : "No items low on stock", 
-            isPositive: dashboardData.products?.low_stock === 0 
+            value: `${lowStock} low, ${outOfStock} out`, 
+            isPositive: lowStock + outOfStock === 0 
           },
           variant: 'warning' as const,
         },
         {
           title: "Pending Receipts",
-          value: dashboardData.operations?.pending_receipts?.toString() || "0",
+          value: pendingReceipts.toString(),
           icon: PackageOpen,
-          variant: 'default' as const,
+          trend: { 
+            value: "Incoming goods awaiting receipt", 
+            isPositive: true 
+          },
+          variant: 'info' as const,
         },
         {
           title: "Pending Deliveries",
-          value: dashboardData.operations?.pending_deliveries?.toString() || "0",
+          value: pendingDeliveries.toString(),
           icon: Truck,
-          variant: 'default' as const,
+          trend: { 
+            value: "Orders ready for delivery", 
+            isPositive: true 
+          },
+          variant: 'success' as const,
         },
         {
-          title: "Internal Transfers",
-          value: dashboardData.operations?.internal_transfers?.toString() || "0",
+          title: "Internal Transfers Scheduled",
+          value: pendingTransfers.toString(),
           icon: ArrowRightLeft,
+          trend: { 
+            value: "Between warehouse locations", 
+            isPositive: true 
+          },
           variant: 'default' as const,
         },
       ]);
       
-      toast.success("Dashboard data loaded successfully!");
+      toast.success(`Dashboard loaded: ${products.length} products, ${users.length} users`);
     } catch (error: any) {
       console.error("Failed to load dashboard data:", error);
       setError("Failed to load dashboard data from Firebase");
       toast.error("Failed to load dashboard data: " + error.message);
       
-      // Show empty state instead of demo data
+      // Show empty state with exact StockMaster KPI structure
       setKpiData([
         {
           title: "Total Products in Stock",
           value: "0",
           icon: Package,
-          trend: { value: "No data available", isPositive: false },
+          trend: { value: "No products added yet", isPositive: true },
           variant: 'default' as const,
         },
         {
-          title: "Low Stock Items",
+          title: "Low Stock / Out of Stock Items",
           value: "0",
           icon: AlertTriangle,
-          trend: { value: "No products to monitor", isPositive: true },
+          trend: { value: "No stock issues", isPositive: true },
           variant: 'warning' as const,
         },
         {
@@ -130,20 +166,20 @@ const Dashboard = () => {
           value: "0",
           icon: PackageOpen,
           trend: { value: "No pending receipts", isPositive: true },
-          variant: 'default' as const,
+          variant: 'info' as const,
         },
         {
           title: "Pending Deliveries",
           value: "0",
           icon: Truck,
           trend: { value: "No pending deliveries", isPositive: true },
-          variant: 'default' as const,
+          variant: 'success' as const,
         },
         {
-          title: "Internal Transfers",
+          title: "Internal Transfers Scheduled",
           value: "0",
           icon: ArrowRightLeft,
-          trend: { value: "No transfers in progress", isPositive: true },
+          trend: { value: "No scheduled transfers", isPositive: true },
           variant: 'default' as const,
         },
       ]);

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/firebase/config";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { mockFirestore } from "@/lib/mockFirebase";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -28,26 +29,38 @@ const Auth = () => {
         loginData.password
       );
       
-      // Check if user exists in backend and get role
+      // Check if user profile exists in Firebase
       try {
-        const response = await fetch('http://localhost:5000/api/auth/profile', {
-          headers: {
-            'Authorization': `Bearer ${await userCredential.user.getIdToken()}`
-          }
-        });
+        const usersQuery = await mockFirestore.collection('users')
+          .where('email', '==', loginData.email)
+          .get();
         
-        if (response.ok) {
-          const userData = await response.json();
-          toast.success(`Welcome back, ${userData.user.firstName || userCredential.user.email}!`);
+        if (usersQuery.docs.length === 0) {
+          // First-time user - redirect to profile setup
+          toast.success("Welcome! Please complete your profile setup.");
+          navigate("/profile-setup", { 
+            state: { 
+              email: userCredential.user.email,
+              isFirstTime: true 
+            } 
+          });
         } else {
-          toast.success(`Welcome back, ${userCredential.user.email}!`);
+          // Existing user - get their data
+          const userData = usersQuery.docs[0].data();
+          localStorage.setItem('currentUser', JSON.stringify({
+            ...userData,
+            id: usersQuery.docs[0].id,
+            uid: userCredential.user.uid
+          }));
+          
+          toast.success(`Welcome back, ${userData.firstName || userData.name}!`);
+          navigate("/dashboard");
         }
       } catch (profileError) {
-        console.log("Profile fetch failed, continuing with basic login");
+        console.error("Profile check failed:", profileError);
         toast.success(`Welcome back, ${userCredential.user.email}!`);
+        navigate("/dashboard");
       }
-      
-      navigate("/dashboard");
     } catch (error: any) {
       console.error("Login error:", error);
       toast.error(error.message || "Login failed. Please try again.");

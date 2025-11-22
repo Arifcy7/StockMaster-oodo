@@ -26,16 +26,16 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
 interface TopNavbarProps {
-  userRole?: 'admin' | 'manager' | 'staff';
+  userRole?: 'admin' | 'inventory_manager' | 'warehouse_staff';
   userName?: string;
   userEmail?: string;
 }
 
-export const TopNavbar = ({ userRole = 'manager', userName = 'John Doe', userEmail = 'john@example.com' }: TopNavbarProps) => {
+export const TopNavbar = ({ userRole = 'warehouse_staff', userName = 'John Doe', userEmail = 'john@example.com' }: TopNavbarProps) => {
   const allNavItems = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/products", label: "Products", icon: Package },
-    { to: "/operations/receipts", label: "Operations", icon: ClipboardList },
+    { to: "/operations", label: "Operations", icon: ClipboardList },
     { to: "/history", label: "History", icon: History },
     ...(userRole === 'admin' ? [{ to: "/admin", label: "Admin", icon: Shield }] : []),
     { to: "/settings", label: "Settings", icon: Settings },

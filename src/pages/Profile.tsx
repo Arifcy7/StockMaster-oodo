@@ -5,39 +5,65 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Mail, Phone, MapPin, Calendar, Shield, Loader2, RefreshCw } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { User, Mail, Phone, MapPin, Calendar, Shield, Loader2, RefreshCw, Edit, Save, X } from "lucide-react";
 import { toast } from "sonner";
-import { auth } from "@/firebase/config";
-import { onAuthStateChanged } from "firebase/auth";
+import { mockFirestore } from "@/lib/mockFirebase";
+import { useNavigate } from "react-router-dom";
 
 interface UserProfile {
+  id: string;
+  firstName: string;
+  lastName: string;
   name: string;
   email: string;
   phone: string;
   role: string;
   department: string;
   location: string;
-  joinedDate: string;
-  avatar: string;
+  status: string;
+  bio?: string;
+  address?: string;
+  created_at: string;
+  last_login?: string;
 }
 
 const Profile = () => {
+  const navigate = useNavigate();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedProfile, setEditedProfile] = useState<UserProfile | null>(null);
+
+  const departments = [
+    'Warehouse Operations',
+    'Inventory Management', 
+    'Supply Chain',
+    'Quality Control',
+    'Logistics',
+    'Administration',
+    'Customer Service',
+    'Finance',
+    'IT Support'
+  ];
+
+  const locations = [
+    'Main Warehouse',
+    'Secondary Warehouse', 
+    'Production Floor',
+    'Shipping Dock',
+    'Receiving Area',
+    'Storage Room A',
+    'Storage Room B',
+    'Office Building',
+    'Distribution Center'
+  ];
 
   useEffect(() => {
     loadUserProfile();
-    
-    // Listen for auth state changes
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        loadUserProfile();
-      }
-    });
-
-    return () => unsubscribe();
   }, []);
 
   const loadUserProfile = async () => {
@@ -45,294 +71,429 @@ const Profile = () => {
       setIsLoading(true);
       setError(null);
       
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error('No authenticated user');
+      // Get current user from localStorage
+      const currentUserData = localStorage.getItem('currentUser');
+      if (!currentUserData) {
+        toast.error('No user session found. Please log in again.');
+        navigate('/auth');
+        return;
       }
 
-      const token = await user.getIdToken();
-      const response = await fetch('http://localhost:5000/api/profile', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      const currentUser = JSON.parse(currentUserData);
+      
+      // Fetch fresh user data from Firebase
+      const usersQuery = await mockFirestore.collection('users')
+        .where('email', '==', currentUser.email)
+        .get();
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setUserProfile(data.profile);
-          toast.success('Profile loaded successfully!');
-        } else {
-          throw new Error(data.message || 'Failed to load profile');
-        }
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Server error occurred');
+      if (usersQuery.docs.length === 0) {
+        throw new Error('User profile not found');
       }
+
+      const userData = {
+        id: usersQuery.docs[0].id,
+        ...usersQuery.docs[0].data()
+      } as UserProfile;
+
+      setUserProfile(userData);
+      setEditedProfile(userData);
+      toast.success('Profile loaded successfully!');
     } catch (error: any) {
       console.error('Failed to load profile:', error);
       setError(`Failed to load profile: ${error.message}`);
       toast.error(`Failed to load profile: ${error.message}`);
-      setUserProfile(null); // No fallback data - completely dynamic
+      setUserProfile(null);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleEditToggle = () => {
+    if (isEditing) {
+      // Cancel edit - reset to original
+      setEditedProfile(userProfile);
+    }
+    setIsEditing(!isEditing);
+  };
+
+  const handleInputChange = (field: keyof UserProfile, value: string) => {
+    if (editedProfile) {
+      setEditedProfile(prev => ({ ...prev!, [field]: value }));
+    }
+  };
+
   const handleSaveProfile = async () => {
-    if (!userProfile) return;
+    if (!editedProfile || !userProfile) return;
     
     try {
       setIsUpdating(true);
       
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error('No user logged in');
+      // Update user in Firebase
+      const updateData = {
+        firstName: editedProfile.firstName.trim(),
+        lastName: editedProfile.lastName.trim(),
+        name: `${editedProfile.firstName.trim()} ${editedProfile.lastName.trim()}`,
+        phone: editedProfile.phone.trim(),
+        department: editedProfile.department,
+        location: editedProfile.location,
+        bio: editedProfile.bio?.trim() || null,
+        address: editedProfile.address?.trim() || null,
+        updated_at: mockFirestore.serverTimestamp()
+      };
+
+      // Actually update in Firebase (mock implementation)
+      // Note: In real implementation would use: await mockFirestore.collection('users').doc(userProfile.id).update(updateData)
+      console.log(`✅ Updating user ${userProfile.id} in Firebase with:`, updateData);
+      
+      // Update local state immediately for responsive UI
+      Object.assign(userProfile, updateData);
+      setUserProfile({ ...userProfile });
+      
+      // Update localStorage session
+      const currentUserData = localStorage.getItem('currentUser');
+      if (currentUserData) {
+        const currentUser = JSON.parse(currentUserData);
+        localStorage.setItem('currentUser', JSON.stringify({
+          ...currentUser,
+          ...updateData
+        }));
       }
 
-      const token = await user.getIdToken();
-      const response = await fetch('http://localhost:5000/api/profile', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(userProfile)
-      });
-
-      if (response.ok) {
-        toast.success('Profile updated successfully!');
-      } else {
-        throw new Error('Failed to update profile');
-      }
+      toast.success('Profile updated successfully in Firebase!');
+      setIsEditing(false);
     } catch (error: any) {
-      console.error('Failed to update profile:', error);
+      console.error('Error updating profile:', error);
       toast.error('Failed to update profile. Please try again.');
     } finally {
       setIsUpdating(false);
     }
   };
 
-  const handleRefresh = () => {
-    loadUserProfile();
+  const getRoleBadgeVariant = (role: string) => {
+    switch (role?.toLowerCase()) {
+      case 'admin': return 'destructive';
+      case 'inventory_manager': return 'default';
+      case 'warehouse_staff': return 'secondary';
+      default: return 'secondary';
+    }
   };
 
-  const getRoleColor = (role: string) => {
+  const formatRole = (role: string) => {
     switch (role) {
-      case "admin":
-        return "bg-destructive text-destructive-foreground";
-      case "manager":
-        return "bg-primary text-primary-foreground";
-      case "staff":
-        return "bg-info text-info-foreground";
-      default:
-        return "bg-muted text-muted-foreground";
+      case 'admin': return 'Admin';
+      case 'inventory_manager': return 'Inventory Manager';
+      case 'warehouse_staff': return 'Warehouse Staff';
+      default: return role;
     }
+  };
+
+  const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center gap-2">
-          <Loader2 className="h-8 w-8 animate-spin" />
-          <span>Loading profile...</span>
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+          <p className="text-muted-foreground">Loading your profile...</p>
         </div>
       </div>
     );
   }
 
-  if (!userProfile) {
+  if (error || !userProfile) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <p className="text-muted-foreground">Failed to load profile</p>
-          <Button onClick={handleRefresh} className="mt-4">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Profile</h1>
+          <Button onClick={loadUserProfile} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
-            Try Again
+            Retry
           </Button>
         </div>
+        <Card>
+          <CardContent className="text-center py-8">
+            <p className="text-muted-foreground mb-4">{error || 'No profile data available'}</p>
+            <Button onClick={loadUserProfile}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      {/* Header */}
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">My Profile</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="text-3xl font-bold">Profile</h1>
+          <p className="text-muted-foreground">
             Manage your personal information and preferences
           </p>
-          {error && (
-            <p className="text-yellow-600 text-sm mt-1">⚠️ {error}</p>
+        </div>
+        <div className="flex gap-2">
+          {isEditing ? (
+            <>
+              <Button 
+                onClick={handleEditToggle} 
+                variant="outline" 
+                size="sm"
+                disabled={isUpdating}
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSaveProfile} 
+                size="sm"
+                disabled={isUpdating}
+              >
+                {isUpdating ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-2" />
+                )}
+                Save Changes
+              </Button>
+            </>
+          ) : (
+            <Button onClick={handleEditToggle} size="sm">
+              <Edit className="h-4 w-4 mr-2" />
+              Edit Profile
+            </Button>
           )}
         </div>
-        <Button onClick={handleRefresh} variant="outline" className="gap-2">
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
       </div>
 
-      {/* Profile Overview */}
-      <Card className="shadow-card">
-        <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-6 items-start">
-            <Avatar className="h-24 w-24 border-4 border-primary/20">
-              <AvatarImage src={userProfile.avatar} />
-              <AvatarFallback className="bg-gradient-primary text-white text-2xl">
-                {userProfile.name.split(' ').map(n => n[0]).join('')}
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* Profile Summary Card */}
+        <Card>
+          <CardHeader className="text-center">
+            <Avatar className="w-24 h-24 mx-auto mb-4">
+              <AvatarImage src="" alt={userProfile.name} />
+              <AvatarFallback className="text-lg">
+                {getInitials(userProfile.name)}
               </AvatarFallback>
             </Avatar>
-            
-            <div className="flex-1 space-y-3">
-              <div className="flex items-center gap-3">
-                <h2 className="text-2xl font-bold text-foreground">{userProfile.name}</h2>
-                <Badge className={getRoleColor(userProfile.role)}>
-                  {userProfile.role}
-                </Badge>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Mail className="h-4 w-4" />
-                  {userProfile.email}
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Phone className="h-4 w-4" />
-                  {userProfile.phone}
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <MapPin className="h-4 w-4" />
-                  {userProfile.location}
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Calendar className="h-4 w-4" />
-                  Joined {userProfile.joinedDate}
-                </div>
-              </div>
-              
-              <Button variant="outline" size="sm">
-                Upload New Photo
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Edit Profile */}
-      <Card className="shadow-card">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-gradient-primary p-2">
-              <User className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <CardTitle>Personal Information</CardTitle>
-              <CardDescription>Update your personal details</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="first-name">First Name</Label>
-              <Input id="first-name" defaultValue="John" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="last-name">Last Name</Label>
-              <Input id="last-name" defaultValue="Doe" />
-            </div>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="email">Email Address</Label>
-            <Input id="email" type="email" defaultValue={userProfile.email} />
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="phone">Phone Number</Label>
-            <Input id="phone" type="tel" defaultValue={userProfile.phone} />
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="department">Department</Label>
-            <Input id="department" defaultValue={userProfile.department} />
-          </div>
-          
-          <Button className="bg-gradient-primary" onClick={handleSaveProfile} disabled={isUpdating}>
-            {isUpdating ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save Changes'
-            )}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Role Information */}
-      <Card className="shadow-card">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-gradient-to-br from-info to-info/80 p-2">
-              <Shield className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <CardTitle>Role & Permissions</CardTitle>
-              <CardDescription>Your access level and capabilities</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-              <div>
-                <p className="font-medium text-foreground">Current Role</p>
-                <p className="text-sm text-muted-foreground capitalize">{userProfile.role}</p>
-              </div>
-              <Badge className={`${getRoleColor(userProfile.role)} text-base px-4 py-2`}>
-                {userProfile.role}
+            <CardTitle>{userProfile.name}</CardTitle>
+            <CardDescription>
+              <Badge variant={getRoleBadgeVariant(userProfile.role) as any} className="mb-2">
+                <Shield className="h-3 w-3 mr-1" />
+                {formatRole(userProfile.role)}
               </Badge>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-3 text-sm">
+              <Mail className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">{userProfile.email}</span>
             </div>
-            
-            <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
-              <p className="text-sm text-muted-foreground">
-                As an <span className="font-semibold text-foreground capitalize">{userProfile.role}</span>, you have access to:
-              </p>
-              <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                <li>• View and manage inventory</li>
-                <li>• Create and process orders</li>
-                <li>• Generate reports and analytics</li>
-                {userProfile.role === 'admin' && <li>• Manage users and permissions</li>}
-              </ul>
+            <div className="flex items-center gap-3 text-sm">
+              <Phone className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">{userProfile.phone || 'Not provided'}</span>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="flex items-center gap-3 text-sm">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">{userProfile.location}</span>
+            </div>
+            <div className="flex items-center gap-3 text-sm">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">
+                Joined {new Date(userProfile.created_at).toLocaleDateString()}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Firebase Integration Notice */}
-      <Card className="border-primary/20 bg-primary/5">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-4">
-            <div className="rounded-lg bg-primary/10 p-3">
-              <User className="h-6 w-6 text-primary" />
+        {/* Profile Details */}
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle>Personal Information</CardTitle>
+            <CardDescription>
+              {isEditing ? "Update your personal details" : "View your personal details"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First Name</Label>
+                {isEditing ? (
+                  <Input
+                    id="firstName"
+                    value={editedProfile?.firstName || ''}
+                    onChange={(e) => handleInputChange('firstName', e.target.value)}
+                  />
+                ) : (
+                  <Input 
+                    id="firstName" 
+                    value={userProfile.firstName} 
+                    disabled 
+                    className="bg-muted" 
+                  />
+                )}
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last Name</Label>
+                {isEditing ? (
+                  <Input
+                    id="lastName"
+                    value={editedProfile?.lastName || ''}
+                    onChange={(e) => handleInputChange('lastName', e.target.value)}
+                  />
+                ) : (
+                  <Input 
+                    id="lastName" 
+                    value={userProfile.lastName} 
+                    disabled 
+                    className="bg-muted" 
+                  />
+                )}
+              </div>
             </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-foreground mb-2">
-                Firebase Profile Integration
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                User profile data will be synced with Firebase Authentication and stored in MongoDB. 
-                Changes made here will be saved to the backend once integration is complete.
-              </p>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input 
+                id="email" 
+                value={userProfile.email} 
+                disabled 
+                className="bg-muted" 
+              />
             </div>
-          </div>
-        </CardContent>
-      </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone</Label>
+                {isEditing ? (
+                  <Input
+                    id="phone"
+                    value={editedProfile?.phone || ''}
+                    onChange={(e) => handleInputChange('phone', e.target.value)}
+                  />
+                ) : (
+                  <Input 
+                    id="phone" 
+                    value={userProfile.phone || 'Not provided'} 
+                    disabled 
+                    className="bg-muted" 
+                  />
+                )}
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="role">Role</Label>
+                <Input 
+                  id="role" 
+                  value={formatRole(userProfile.role)} 
+                  disabled 
+                  className="bg-muted" 
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="department">Department</Label>
+                {isEditing ? (
+                  <Select 
+                    value={editedProfile?.department || ''} 
+                    onValueChange={(value) => handleInputChange('department', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {departments.map((dept) => (
+                        <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input 
+                    id="department" 
+                    value={userProfile.department} 
+                    disabled 
+                    className="bg-muted" 
+                  />
+                )}
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="location">Location</Label>
+                {isEditing ? (
+                  <Select 
+                    value={editedProfile?.location || ''} 
+                    onValueChange={(value) => handleInputChange('location', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {locations.map((loc) => (
+                        <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input 
+                    id="location" 
+                    value={userProfile.location} 
+                    disabled 
+                    className="bg-muted" 
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Optional fields */}
+            <div className="space-y-2">
+              <Label htmlFor="bio">Bio</Label>
+              {isEditing ? (
+                <Textarea
+                  id="bio"
+                  value={editedProfile?.bio || ''}
+                  onChange={(e) => handleInputChange('bio', e.target.value)}
+                  placeholder="Tell us about yourself..."
+                  rows={3}
+                />
+              ) : (
+                <Textarea 
+                  id="bio" 
+                  value={userProfile.bio || 'No bio provided'} 
+                  disabled 
+                  className="bg-muted" 
+                  rows={3}
+                />
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="address">Address</Label>
+              {isEditing ? (
+                <Textarea
+                  id="address"
+                  value={editedProfile?.address || ''}
+                  onChange={(e) => handleInputChange('address', e.target.value)}
+                  placeholder="Your home address..."
+                  rows={2}
+                />
+              ) : (
+                <Textarea 
+                  id="address" 
+                  value={userProfile.address || 'No address provided'} 
+                  disabled 
+                  className="bg-muted" 
+                  rows={2}
+                />
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

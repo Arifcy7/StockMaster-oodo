@@ -3,7 +3,7 @@ import { TopNavbar } from "./TopNavbar";
 
 interface MainLayoutProps {
   children: ReactNode;
-  userRole?: 'admin' | 'manager' | 'staff';
+  userRole?: 'admin' | 'inventory_manager' | 'warehouse_staff';
 }
 
 export const MainLayout = ({ children, userRole }: MainLayoutProps) => {
