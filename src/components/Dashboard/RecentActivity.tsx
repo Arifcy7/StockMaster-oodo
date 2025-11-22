@@ -26,37 +26,8 @@ const typeColors = {
 };
 
 export const RecentActivity = () => {
-  // Mock data - will be replaced with Firebase/MongoDB data
-  const activities: Activity[] = [
-    {
-      id: '1',
-      type: 'receipt',
-      description: 'Received 100 units of Steel Rods from Supplier A',
-      status: 'done',
-      time: '2 hours ago'
-    },
-    {
-      id: '2',
-      type: 'delivery',
-      description: 'Delivered 50 units of Office Chairs to Customer B',
-      status: 'ready',
-      time: '4 hours ago'
-    },
-    {
-      id: '3',
-      type: 'transfer',
-      description: 'Transferred 30 units from Warehouse A to Production Floor',
-      status: 'waiting',
-      time: '6 hours ago'
-    },
-    {
-      id: '4',
-      type: 'adjustment',
-      description: 'Adjusted inventory for damaged items (-5 units)',
-      status: 'done',
-      time: '1 day ago'
-    },
-  ];
+  // Empty state - no database data available
+  const activities: Activity[] = [];
 
   return (
     <Card className="shadow-card">
@@ -65,32 +36,43 @@ export const RecentActivity = () => {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {activities.map((activity) => (
-            <div
-              key={activity.id}
-              className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0"
-            >
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={cn(
-                    "text-sm font-medium capitalize",
-                    typeColors[activity.type]
-                  )}>
-                    {activity.type}
-                  </span>
-                  <Badge className={cn("text-xs", statusColors[activity.status])}>
-                    {activity.status}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {activity.description}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {activity.time}
-                </p>
-              </div>
+          {activities.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground text-sm">
+                No recent activity to display
+              </p>
+              <p className="text-muted-foreground text-xs mt-1">
+                Database is empty - activities will appear here when operations are performed
+              </p>
             </div>
-          ))}
+          ) : (
+            activities.map((activity) => (
+              <div
+                key={activity.id}
+                className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={cn(
+                      "text-sm font-medium capitalize",
+                      typeColors[activity.type]
+                    )}>
+                      {activity.type}
+                    </span>
+                    <Badge className={cn("text-xs", statusColors[activity.status])}>
+                      {activity.status}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {activity.description}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {activity.time}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </CardContent>
     </Card>

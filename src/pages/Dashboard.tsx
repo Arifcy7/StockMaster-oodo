@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { getDashboardData } from "@/services/api";
+import { dashboard } from "@/services/firebase";
 
 const Dashboard = () => {
   const [kpiData, setKpiData] = useState([
@@ -56,11 +56,12 @@ const Dashboard = () => {
       setIsLoading(true);
       setError(null);
       
-      // Try to get dashboard data from backend
-      const response = await getDashboardData();
-      const dashboardData = response.data;
+      // Get dashboard data from Firebase
+      const dashboardData = await dashboard.getStats();
       
-      // Update KPI data with real data from backend
+      console.log('Dashboard data received:', dashboardData);
+      
+      // Update KPI data with real data from Firebase
       setKpiData([
         {
           title: "Total Products in Stock",
@@ -76,20 +77,23 @@ const Dashboard = () => {
           title: "Low Stock Items",
           value: dashboardData.products?.low_stock?.toString() || "0",
           icon: AlertTriangle,
-          trend: { value: "Requires attention", isPositive: false },
+          trend: { 
+            value: dashboardData.products?.low_stock > 0 ? "Requires attention" : "No items low on stock", 
+            isPositive: dashboardData.products?.low_stock === 0 
+          },
           variant: 'warning' as const,
         },
         {
           title: "Pending Receipts",
           value: dashboardData.operations?.pending_receipts?.toString() || "0",
           icon: PackageOpen,
-          variant: 'info' as const,
+          variant: 'default' as const,
         },
         {
           title: "Pending Deliveries",
           value: dashboardData.operations?.pending_deliveries?.toString() || "0",
           icon: Truck,
-          variant: 'success' as const,
+          variant: 'default' as const,
         },
         {
           title: "Internal Transfers",
@@ -102,41 +106,44 @@ const Dashboard = () => {
       toast.success("Dashboard data loaded successfully!");
     } catch (error: any) {
       console.error("Failed to load dashboard data:", error);
-      setError("Failed to load dashboard data");
-      toast.error("Failed to load dashboard data. Using demo data.");
+      setError("Failed to load dashboard data from Firebase");
+      toast.error("Failed to load dashboard data: " + error.message);
       
-      // Fallback to demo data
+      // Show empty state instead of demo data
       setKpiData([
         {
           title: "Total Products in Stock",
-          value: "1,234",
+          value: "0",
           icon: Package,
-          trend: { value: "+12% from last month", isPositive: true },
+          trend: { value: "No data available", isPositive: false },
           variant: 'default' as const,
         },
         {
           title: "Low Stock Items",
-          value: "23",
+          value: "0",
           icon: AlertTriangle,
-          trend: { value: "Requires attention", isPositive: false },
+          trend: { value: "No products to monitor", isPositive: true },
           variant: 'warning' as const,
         },
         {
           title: "Pending Receipts",
-          value: "15",
+          value: "0",
           icon: PackageOpen,
-          variant: 'info' as const,
+          trend: { value: "No pending receipts", isPositive: true },
+          variant: 'default' as const,
         },
         {
           title: "Pending Deliveries",
-          value: "8",
+          value: "0",
           icon: Truck,
-          variant: 'success' as const,
+          trend: { value: "No pending deliveries", isPositive: true },
+          variant: 'default' as const,
         },
         {
           title: "Internal Transfers",
-          value: "5",
+          value: "0",
           icon: ArrowRightLeft,
+          trend: { value: "No transfers in progress", isPositive: true },
           variant: 'default' as const,
         },
       ]);
@@ -153,9 +160,15 @@ const Dashboard = () => {
           <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
           <p className="text-muted-foreground mt-1">
             Overview of your inventory operations
+            {error && (
+              <span className="text-orange-500 ml-2">({error})</span>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={loadDashboardData} disabled={isLoading}>
+            {isLoading ? 'Loading...' : 'Refresh'}
+          </Button>
           <Button variant="outline">
             Export Report
           </Button>
@@ -185,56 +198,65 @@ const Dashboard = () => {
               <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
                 <div>
                   <p className="text-sm font-medium text-foreground">Products Added Today</p>
-                  <p className="text-2xl font-bold text-primary mt-1">12</p>
+                  <p className="text-2xl font-bold text-primary mt-1">
+                    {isLoading ? "..." : "0"}
+                  </p>
                 </div>
-                <Badge className="bg-success text-success-foreground">Active</Badge>
+                <Badge className="bg-muted text-muted-foreground">
+                  {error ? "No Data" : "Empty"}
+                </Badge>
               </div>
               
               <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
                 <div>
                   <p className="text-sm font-medium text-foreground">Orders Processed</p>
-                  <p className="text-2xl font-bold text-primary mt-1">47</p>
+                  <p className="text-2xl font-bold text-primary mt-1">
+                    {isLoading ? "..." : "0"}
+                  </p>
                 </div>
-                <Badge className="bg-info text-info-foreground">Today</Badge>
+                <Badge className="bg-muted text-muted-foreground">
+                  {error ? "No Data" : "Empty"}
+                </Badge>
               </div>
               
               <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
                 <div>
                   <p className="text-sm font-medium text-foreground">Stock Movements</p>
-                  <p className="text-2xl font-bold text-primary mt-1">89</p>
+                  <p className="text-2xl font-bold text-primary mt-1">
+                    {isLoading ? "..." : "0"}
+                  </p>
                 </div>
-                <Badge className="bg-warning text-warning-foreground">This Week</Badge>
+                <Badge className="bg-muted text-muted-foreground">
+                  {error ? "No Data" : "Empty"}
+                </Badge>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Firebase Integration Notice */}
-      <Card className="border-primary/20 bg-primary/5">
+      {/* Database Status Notice */}
+      <Card className="border-orange-200 bg-orange-50">
         <CardContent className="pt-6">
           <div className="flex items-start gap-4">
-            <div className="rounded-lg bg-primary/10 p-3">
-              <Package className="h-6 w-6 text-primary" />
+            <div className="rounded-lg bg-orange-100 p-3">
+              <Package className="h-6 w-6 text-orange-600" />
             </div>
             <div className="flex-1">
               <h3 className="font-semibold text-foreground mb-2">
-                Backend Integration Ready
+                Empty Database Mode
               </h3>
               <p className="text-sm text-muted-foreground mb-4">
-                This dashboard is ready to connect with your Firebase authentication, 
-                MongoDB database, and Flask backend. All data displayed is currently mock data 
-                that will be replaced with real-time data once integrated.
+                The system is currently running with an empty database. All sections show zero data 
+                because no database is connected. Use the "Add Product", "Add User", and other create 
+                functions to populate the database, or connect a real database to see actual data.
               </p>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm">
-                  Setup Firebase Auth
+                  Add Sample Data
                 </Button>
                 <Button variant="outline" size="sm">
-                  Configure MongoDB
-                </Button>
-                <Button variant="outline" size="sm">
-                  Connect Flask API
+                  Connect Database
                 </Button>
               </div>
             </div>

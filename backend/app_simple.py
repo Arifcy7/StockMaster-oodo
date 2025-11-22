@@ -9,7 +9,7 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:8080", "*"])
+CORS(app, origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:8080", "http://localhost:8081", "*"])
 
 print("🚀 StockMaster Backend API starting...")
 print(f"🔧 Environment: {os.getenv('FLASK_ENV', 'development')}")
@@ -91,6 +91,261 @@ def get_mock_products():
         }
     ]
 
+# New endpoints for dynamic content
+
+@app.route('/api/operations', methods=['GET', 'POST'])
+def handle_operations():
+    """Get all operations or create new operation"""
+    if request.method == 'GET':
+        try:
+            # TODO: Replace with actual database query
+            # For now, return empty array since no database is connected
+            operations = []  # Empty - no data in database
+            
+            return jsonify({
+                'success': True,
+                'operations': operations,
+                'total': len(operations),
+                'message': 'No operations found in database' if len(operations) == 0 else None
+            }), 200
+        except Exception as e:
+            print(f"Error getting operations: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve operations',
+                'error': str(e)
+            }), 500
+    
+    elif request.method == 'POST':
+        try:
+            data = request.get_json()
+            operation_type = data.get('type', 'general')
+            created_by = data.get('createdBy')
+            
+            new_operation = {
+                'id': f"OP-{datetime.now().timestamp()}",
+                'type': operation_type,
+                'title': f"New {operation_type.title()}",
+                'description': "Pending",
+                'status': "draft",
+                'date': datetime.now().strftime('%Y-%m-%d'),
+                'createdBy': created_by,
+                'createdAt': datetime.utcnow().isoformat()
+            }
+            
+            # In a real app, save to database
+            print(f"Created new operation: {new_operation}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Operation created successfully',
+                'operation': new_operation
+            }), 201
+        except Exception as e:
+            print(f"Error creating operation: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to create operation',
+                'error': str(e)
+            }), 500
+
+@app.route('/api/movements', methods=['GET'])
+def get_movements():
+    """Get movement history"""
+    try:
+        # TODO: Replace with actual database query
+        # For now, return empty array since no database is connected
+        movements = []  # Empty - no data in database
+        
+        return jsonify({
+            'success': True,
+            'movements': movements,
+            'total': len(movements),
+            'message': 'No movement history found in database' if len(movements) == 0 else None
+        }), 200
+        
+    except Exception as e:
+        print(f"Error getting movements: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to retrieve movements',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/profile', methods=['GET', 'PUT'])
+def handle_profile():
+    """Get or update user profile"""
+    if request.method == 'GET':
+        try:
+            # TODO: Replace with actual database query based on authenticated user
+            # For now, return null since no database profile exists
+            profile = None  # No profile in database
+            
+            if profile is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'No profile found in database for this user',
+                    'profile': None
+                }), 404
+            
+            return jsonify({
+                'success': True,
+                'profile': profile
+            }), 200
+        except Exception as e:
+            print(f"Error getting profile: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve profile',
+                'error': str(e)
+            }), 500
+    
+    elif request.method == 'PUT':
+        try:
+            data = request.get_json()
+            print(f"Profile update request: {data}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Profile updated successfully',
+                'profile': data
+            }), 200
+        except Exception as e:
+            print(f"Error updating profile: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to update profile',
+                'error': str(e)
+            }), 500
+
+@app.route('/api/settings', methods=['GET', 'PUT'])
+def handle_settings():
+    """Get or update system settings"""
+    if request.method == 'GET':
+        try:
+            # TODO: Replace with actual database query
+            # For now, return null since no settings exist in database
+            settings = None  # No settings in database
+            
+            if settings is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'No system settings found in database',
+                    'settings': None
+                }), 404
+            
+            return jsonify({
+                'success': True,
+                'settings': settings
+            }), 200
+        except Exception as e:
+            print(f"Error getting settings: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve settings',
+                'error': str(e)
+            }), 500
+    
+    elif request.method == 'PUT':
+        try:
+            data = request.get_json()
+            print(f"Settings update request: {data}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Settings updated successfully',
+                'settings': data
+            }), 200
+        except Exception as e:
+            print(f"Error updating settings: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to update settings',
+                'error': str(e)
+            }), 500
+
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    """Get all users"""
+    try:
+        users = [
+            {
+                "id": "1",
+                "name": "John Doe",
+                "email": "john.doe@example.com",
+                "role": "admin",
+                "status": "active",
+                "lastLogin": "2024-01-20T10:30:00Z",
+                "createdAt": "2024-01-01T00:00:00Z"
+            },
+            {
+                "id": "2",
+                "name": "Jane Smith",
+                "email": "jane.smith@example.com",
+                "role": "manager",
+                "status": "active",
+                "lastLogin": "2024-01-19T14:20:00Z",
+                "createdAt": "2024-01-05T00:00:00Z"
+            },
+            {
+                "id": "3",
+                "name": "Bob Wilson",
+                "email": "bob.wilson@example.com",
+                "role": "staff",
+                "status": "active",
+                "lastLogin": "2024-01-18T09:15:00Z",
+                "createdAt": "2024-01-10T00:00:00Z"
+            }
+        ]
+        
+        return jsonify({
+            'success': True,
+            'users': users,
+            'total': len(users)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error getting users: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to retrieve users',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/users', methods=['POST'])
+def create_user():
+    """Create a new user"""
+    try:
+        data = request.get_json()
+        print(f"User creation request: {data}")
+        
+        # In a real app, create user in Firebase and database
+        new_user = {
+            "id": f"new-{datetime.now().timestamp()}",
+            "name": data.get('name'),
+            "email": data.get('email'),
+            "role": data.get('role'),
+            "status": "active",
+            "lastLogin": None,
+            "createdAt": datetime.utcnow().isoformat()
+        }
+        
+        return jsonify({
+            'success': True,
+            'message': 'User created successfully',
+            'user': new_user
+        }), 201
+        
+    except Exception as e:
+        print(f"Error creating user: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to create user',
+            'error': str(e)
+        }), 500
+
+# Keep existing endpoints...
+
 # Health check
 @app.route('/health')
 def health():
@@ -100,23 +355,6 @@ def health():
         'version': '1.0.0',
         'message': 'StockMaster Backend API is running'
     })
-
-# Authentication endpoints
-@app.route('/api/auth/register', methods=['POST'])
-def register():
-    data = request.json
-    return jsonify({
-        'message': 'User registered successfully',
-        'user': {
-            'id': 'new-user-123',
-            'name': data.get('name', 'New User'),
-            'email': data.get('email', 'user@example.com'),
-            'role': data.get('role', 'staff')
-        }
-    }), 201
-
-@app.route('/api/auth/profile', methods=['GET'])
-def get_profile():
     return jsonify({
         'id': 'dev-user-123',
         'name': 'Development User',
@@ -128,35 +366,73 @@ def get_profile():
     })
 
 # Products endpoints
-@app.route('/api/products', methods=['GET'])
-def get_products():
-    products = get_mock_products()
+@app.route('/api/products', methods=['GET', 'POST'])
+def handle_products():
+    if request.method == 'GET':
+        try:
+            # TODO: Replace with actual database query
+            # For now, return empty array since no database is connected
+            products = []  # Empty - no data in database
+            
+            # Apply filters (when we have data)
+            search = request.args.get('search', '').lower()
+            category = request.args.get('category')
+            status = request.args.get('status')
+            location = request.args.get('location')
+            
+            return jsonify({
+                'success': True,
+                'products': products,
+                'total': len(products),
+                'message': 'No products found in database' if len(products) == 0 else None
+            }), 200
+        except Exception as e:
+            print(f"Error getting products: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve products',
+                'error': str(e)
+            }), 500
     
-    # Apply filters
-    search = request.args.get('search', '').lower()
-    category = request.args.get('category')
-    status = request.args.get('status')
-    location = request.args.get('location')
-    
-    if search:
-        products = [p for p in products 
-                   if search in p['name'].lower() or 
-                      search in p['sku'].lower() or
-                      search in p['category'].lower()]
-    
-    if category:
-        products = [p for p in products if p['category'] == category]
-    
-    if status:
-        products = [p for p in products if p['status'] == status]
-    
-    if location:
-        products = [p for p in products if p['location'] == location]
-    
-    return jsonify({
-        'products': products,
-        'total': len(products)
-    })
+    elif request.method == 'POST':
+        try:
+            data = request.get_json()
+            name = data.get('name', 'New Product')
+            category = data.get('category', 'General')
+            created_by = data.get('createdBy')
+            
+            new_product = {
+                'id': str(int(datetime.now().timestamp())),
+                'name': name,
+                'sku': f"PRD-{datetime.now().timestamp():.0f}",
+                'category': category,
+                'stock': 0,
+                'unit': 'units',
+                'status': 'In Stock',
+                'location': 'Main Warehouse',
+                'reorder_level': 10,
+                'supplier': 'TBD',
+                'cost_price': 0.00,
+                'selling_price': 0.00,
+                'createdBy': created_by,
+                'created_at': datetime.utcnow().isoformat(),
+                'updated_at': datetime.utcnow().isoformat()
+            }
+            
+            print(f"Created new product: {new_product}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Product created successfully',
+                'product': new_product
+            }), 201
+        except Exception as e:
+            print(f"Error creating product: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to create product',
+                'error': str(e)
+            }), 500
 
 @app.route('/api/products', methods=['POST'])
 def create_product():
@@ -300,78 +576,43 @@ def get_adjustments():
 # Dashboard endpoints
 @app.route('/api/dashboard/stats', methods=['GET'])
 def get_dashboard_stats():
-    stats = {
-        'products': {
-            'total': 1234,
-            'in_stock': 1150,
-            'low_stock': 23,
-            'out_of_stock': 61,
-            'trend': {
-                'value': '+12% from last month',
-                'is_positive': True
-            }
-        },
-        'operations': {
-            'pending_receipts': 15,
-            'pending_deliveries': 8,
-            'internal_transfers': 5,
-            'pending_adjustments': 3
-        },
-        'activity': {
-            'products_added_today': 12,
-            'orders_processed_today': 47,
-            'stock_movements_week': 89
-        },
-        'alerts': [
-            {
-                'type': 'low_stock',
-                'message': '23 products are running low on stock',
-                'priority': 'high',
-                'timestamp': (datetime.utcnow() - timedelta(hours=2)).isoformat()
-            }
-        ],
-        'recent_activity': [
-            {
-                'id': '1',
-                'user': 'Admin User',
-                'action': 'Created new product',
-                'details': 'Steel Rods (STL-001)',
-                'timestamp': (datetime.utcnow() - timedelta(minutes=10)).isoformat()
-            }
-        ]
-    }
-    return jsonify(stats)
+    """Return empty/zero stats when no database is connected"""
+    try:
+        # TODO: Calculate from actual database
+        # Return zero stats since no database is connected
+        stats = {
+            'products': {
+                'total': 0,
+                'in_stock': 0,
+                'low_stock': 0,
+                'out_of_stock': 0,
+                'trend': {
+                    'value': 'No data available',
+                    'is_positive': False
+                }
+            },
+            'operations': {
+                'pending_receipts': 0,
+                'pending_deliveries': 0,
+                'internal_transfers': 0,
+                'pending_adjustments': 0
+            },
+            'activity': {
+                'products_added_today': 0,
+                'orders_processed_today': 0,
+                'stock_movements_week': 0
+            },
+            'alerts': [],
+            'recent_activity': [],
+            'message': 'No data in database - connect to see real statistics'
+        }
+        return jsonify(stats)
 
 @app.route('/api/dashboard/low-stock', methods=['GET'])
 def get_low_stock():
     products = [p for p in get_mock_products() if p['status'] == 'Low Stock']
     limit = int(request.args.get('limit', 10))
     return jsonify({'products': products[:limit]})
-
-# Users endpoints
-@app.route('/api/users', methods=['GET'])
-def get_users():
-    users = [
-        {
-            "id": "1",
-            "name": "Admin User",
-            "email": "admin@stockmaster.com",
-            "role": "admin",
-            "department": "Management",
-            "location": "Head Office",
-            "status": "active"
-        },
-        {
-            "id": "2",
-            "name": "Inventory Manager", 
-            "email": "manager@stockmaster.com",
-            "role": "manager",
-            "department": "Warehouse",
-            "location": "Warehouse A",
-            "status": "active"
-        }
-    ]
-    return jsonify({'users': users, 'total': len(users)})
 
 # Error handlers
 @app.errorhandler(404)

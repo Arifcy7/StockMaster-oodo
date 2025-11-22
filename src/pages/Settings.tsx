@@ -1,20 +1,174 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Warehouse, Bell, Shield, Database, Zap } from "lucide-react";
+import { Warehouse, Bell, Shield, Database, Zap, Loader2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { auth } from "@/firebase/config";
+
+interface SystemSettings {
+  warehouseName: string;
+  multiWarehouseEnabled: boolean;
+  lowStockAlerts: boolean;
+  outOfStockAlerts: boolean;
+  pendingOperationsAlerts: boolean;
+  sessionTimeout: number;
+  twoFactorEnabled: boolean;
+  backupEnabled: boolean;
+  autoBackupInterval: number;
+  apiIntegrationEnabled: boolean;
+  realtimeUpdatesEnabled: boolean;
+}
 
 const Settings = () => {
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('Authentication required');
+      }
+
+      const token = await user.getIdToken();
+      const response = await fetch('http://localhost:5000/api/settings', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setSettings(data.settings);
+          toast.success('Settings loaded successfully!');
+        } else {
+          throw new Error(data.message || 'Failed to load settings');
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Server error occurred');
+      }
+    } catch (error: any) {
+      console.error('Failed to load settings:', error);
+      setError(`Failed to load settings: ${error.message}`);
+      toast.error(`Failed to load settings: ${error.message}`);
+      setSettings(null); // No fallback data - completely dynamic
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!settings) return;
+
+    try {
+      setIsSaving(true);
+      
+      const user = auth.currentUser;
+      if (user) {
+        const token = await user.getIdToken();
+        const response = await fetch('http://localhost:5000/api/settings', {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(settings)
+        });
+
+        if (response.ok) {
+          toast.success('Settings saved successfully!');
+        } else {
+          throw new Error('Failed to save settings');
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to save settings:', error);
+      toast.error('Failed to save settings. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    loadSettings();
+  };
+
+  const updateSetting = (key: keyof SystemSettings, value: any) => {
+    if (settings) {
+      setSettings({ ...settings, [key]: value });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <span>Loading settings...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!settings) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <p className="text-muted-foreground">Failed to load settings</p>
+          <Button onClick={handleRefresh} className="mt-4">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Settings</h1>
-        <p className="text-muted-foreground mt-1">
-          Manage your system preferences and configurations
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Settings</h1>
+          <p className="text-muted-foreground mt-1">
+            Manage your system preferences and configurations
+          </p>
+          {error && (
+            <p className="text-yellow-600 text-sm mt-1">⚠️ {error}</p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={handleRefresh} variant="outline" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+          <Button onClick={handleSaveSettings} disabled={isSaving} className="gap-2">
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save Settings'
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Warehouse Settings */}
@@ -33,7 +187,12 @@ const Settings = () => {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="warehouse-name">Default Warehouse</Label>
-            <Input id="warehouse-name" placeholder="Main Warehouse" />
+            <Input 
+              id="warehouse-name" 
+              placeholder="Main Warehouse" 
+              value={settings.warehouseName}
+              onChange={(e) => updateSetting('warehouseName', e.target.value)}
+            />
           </div>
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
@@ -42,7 +201,10 @@ const Settings = () => {
                 Enable tracking across multiple locations
               </p>
             </div>
-            <Switch defaultChecked />
+            <Switch 
+              checked={settings.multiWarehouseEnabled}
+              onCheckedChange={(checked) => updateSetting('multiWarehouseEnabled', checked)}
+            />
           </div>
           <Button>Add New Warehouse</Button>
         </CardContent>
@@ -69,7 +231,10 @@ const Settings = () => {
                 Get notified when products reach minimum stock level
               </p>
             </div>
-            <Switch defaultChecked />
+            <Switch 
+              checked={settings.lowStockAlerts}
+              onCheckedChange={(checked) => updateSetting('lowStockAlerts', checked)}
+            />
           </div>
           <Separator />
           <div className="flex items-center justify-between">
@@ -79,7 +244,10 @@ const Settings = () => {
                 Immediate notification for zero stock items
               </p>
             </div>
-            <Switch defaultChecked />
+            <Switch 
+              checked={settings.outOfStockAlerts}
+              onCheckedChange={(checked) => updateSetting('outOfStockAlerts', checked)}
+            />
           </div>
           <Separator />
           <div className="flex items-center justify-between">
@@ -89,7 +257,10 @@ const Settings = () => {
                 Daily summary of pending receipts and deliveries
               </p>
             </div>
-            <Switch />
+            <Switch 
+              checked={settings.pendingOperationsAlerts}
+              onCheckedChange={(checked) => updateSetting('pendingOperationsAlerts', checked)}
+            />
           </div>
         </CardContent>
       </Card>

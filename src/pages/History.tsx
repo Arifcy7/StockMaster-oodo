@@ -1,8 +1,9 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Download, Filter } from "lucide-react";
+import { Search, Download, Filter, Loader2, RefreshCw } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -11,58 +12,81 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useState } from "react";
+import { toast } from "sonner";
+import { auth } from "@/firebase/config";
+
+interface Movement {
+  id: string;
+  date: string;
+  type: 'receipt' | 'delivery' | 'transfer' | 'adjustment';
+  product: string;
+  quantity: string;
+  from: string;
+  to: string;
+  user: string;
+  reference: string;
+}
 
 const History = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [movements, setMovements] = useState<Movement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data - will be replaced with MongoDB data via Flask API
-  const movements = [
-    {
-      id: "M001",
-      date: "2024-01-20 14:30",
-      type: "receipt",
-      product: "Steel Rods",
-      quantity: "+100",
-      from: "Supplier A",
-      to: "Warehouse A",
-      user: "John Doe",
-      reference: "R001",
-    },
-    {
-      id: "M002",
-      date: "2024-01-20 15:45",
-      type: "delivery",
-      product: "Office Chairs",
-      quantity: "-50",
-      from: "Warehouse B",
-      to: "Customer X",
-      user: "Jane Smith",
-      reference: "D001",
-    },
-    {
-      id: "M003",
-      date: "2024-01-20 16:20",
-      type: "transfer",
-      product: "Laptop Batteries",
-      quantity: "30",
-      from: "Main Store",
-      to: "Production Floor",
-      user: "Bob Wilson",
-      reference: "T001",
-    },
-    {
-      id: "M004",
-      date: "2024-01-19 11:15",
-      type: "adjustment",
-      product: "Paint Cans",
-      quantity: "-5",
-      from: "Warehouse A",
-      to: "Damaged Stock",
-      user: "John Doe",
-      reference: "A001",
-    },
-  ];
+  useEffect(() => {
+    loadMovementHistory();
+  }, []);
+
+  const loadMovementHistory = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('Authentication required');
+      }
+
+      const token = await user.getIdToken();
+      const response = await fetch('http://localhost:5000/api/movements', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setMovements(data.movements || []);
+          toast.success(`Loaded ${data.movements?.length || 0} movement records successfully!`);
+        } else {
+          throw new Error(data.message || 'Failed to load movement history');
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Server error occurred');
+      }
+    } catch (error: any) {
+      console.error('Failed to load movement history:', error);
+      setError(`Failed to load movement history: ${error.message}`);
+      toast.error(`Failed to load history: ${error.message}`);
+      setMovements([]); // No fallback data - completely dynamic
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    loadMovementHistory();
+  };
+
+  // Filter movements based on search query
+  const filteredMovements = movements.filter(movement =>
+    movement.product.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    movement.reference.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    movement.user.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const getTypeColor = (type: string) => {
     const colors = {
@@ -74,6 +98,17 @@ const History = () => {
     return colors[type as keyof typeof colors] || 'bg-muted text-muted-foreground';
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <span>Loading movement history...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -83,8 +118,15 @@ const History = () => {
           <p className="text-muted-foreground mt-1">
             Complete audit trail of all stock movements
           </p>
+          {error && (
+            <p className="text-yellow-600 text-sm mt-1">⚠️ {error}</p>
+          )}
         </div>
         <div className="flex gap-2">
+          <Button onClick={handleRefresh} variant="outline" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
           <Button variant="outline">
             <Filter className="mr-2 h-4 w-4" />
             Filter
@@ -131,7 +173,7 @@ const History = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {movements.map((movement) => (
+              {filteredMovements.map((movement) => (
                 <TableRow key={movement.id}>
                   <TableCell className="text-muted-foreground">{movement.date}</TableCell>
                   <TableCell>
@@ -153,6 +195,13 @@ const History = () => {
                   </TableCell>
                 </TableRow>
               ))}
+              {filteredMovements.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    {searchQuery ? 'No movements found matching your search.' : 'No movements found.'}
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>

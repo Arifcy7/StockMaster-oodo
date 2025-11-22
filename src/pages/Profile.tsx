@@ -1,22 +1,121 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Mail, Phone, MapPin, Calendar, Shield } from "lucide-react";
+import { User, Mail, Phone, MapPin, Calendar, Shield, Loader2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { auth } from "@/firebase/config";
+import { onAuthStateChanged } from "firebase/auth";
+
+interface UserProfile {
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  department: string;
+  location: string;
+  joinedDate: string;
+  avatar: string;
+}
 
 const Profile = () => {
-  // Mock data - will be replaced with Firebase user data
-  const userProfile = {
-    name: "John Doe",
-    email: "john.doe@example.com",
-    phone: "+1 (555) 123-4567",
-    role: "manager",
-    department: "Warehouse Operations",
-    location: "Main Warehouse",
-    joinedDate: "January 15, 2024",
-    avatar: "",
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    loadUserProfile();
+    
+    // Listen for auth state changes
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        loadUserProfile();
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+
+      const token = await user.getIdToken();
+      const response = await fetch('http://localhost:5000/api/profile', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setUserProfile(data.profile);
+          toast.success('Profile loaded successfully!');
+        } else {
+          throw new Error(data.message || 'Failed to load profile');
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Server error occurred');
+      }
+    } catch (error: any) {
+      console.error('Failed to load profile:', error);
+      setError(`Failed to load profile: ${error.message}`);
+      toast.error(`Failed to load profile: ${error.message}`);
+      setUserProfile(null); // No fallback data - completely dynamic
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!userProfile) return;
+    
+    try {
+      setIsUpdating(true);
+      
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('No user logged in');
+      }
+
+      const token = await user.getIdToken();
+      const response = await fetch('http://localhost:5000/api/profile', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(userProfile)
+      });
+
+      if (response.ok) {
+        toast.success('Profile updated successfully!');
+      } else {
+        throw new Error('Failed to update profile');
+      }
+    } catch (error: any) {
+      console.error('Failed to update profile:', error);
+      toast.error('Failed to update profile. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    loadUserProfile();
   };
 
   const getRoleColor = (role: string) => {
@@ -32,14 +131,48 @@ const Profile = () => {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <span>Loading profile...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userProfile) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <p className="text-muted-foreground">Failed to load profile</p>
+          <Button onClick={handleRefresh} className="mt-4">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-4xl">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">My Profile</h1>
-        <p className="text-muted-foreground mt-1">
-          Manage your personal information and preferences
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">My Profile</h1>
+          <p className="text-muted-foreground mt-1">
+            Manage your personal information and preferences
+          </p>
+          {error && (
+            <p className="text-yellow-600 text-sm mt-1">⚠️ {error}</p>
+          )}
+        </div>
+        <Button onClick={handleRefresh} variant="outline" className="gap-2">
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
       </div>
 
       {/* Profile Overview */}
@@ -128,8 +261,15 @@ const Profile = () => {
             <Input id="department" defaultValue={userProfile.department} />
           </div>
           
-          <Button className="bg-gradient-primary">
-            Save Changes
+          <Button className="bg-gradient-primary" onClick={handleSaveProfile} disabled={isUpdating}>
+            {isUpdating ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save Changes'
+            )}
           </Button>
         </CardContent>
       </Card>

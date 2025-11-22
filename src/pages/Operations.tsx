@@ -1,8 +1,11 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PackageOpen, Truck, ArrowRightLeft, FileText, Plus } from "lucide-react";
+import { PackageOpen, Truck, ArrowRightLeft, FileText, Plus, Loader2, RefreshCw } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import { auth } from "@/firebase/config";
 import {
   Table,
   TableBody,
@@ -12,27 +15,121 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+interface Operation {
+  id: string;
+  type: 'receipt' | 'delivery' | 'transfer' | 'adjustment';
+  title: string;
+  description: string;
+  status: string;
+  date: string;
+  items?: number;
+  supplier?: string;
+  customer?: string;
+  from?: string;
+  to?: string;
+  product?: string;
+  quantity?: number;
+  reason?: string;
+}
+
 const Operations = () => {
-  // Mock data
-  const receipts = [
-    { id: "R001", supplier: "Supplier A", items: 5, status: "done", date: "2024-01-20" },
-    { id: "R002", supplier: "Supplier B", items: 3, status: "waiting", date: "2024-01-21" },
-  ];
+  const [operations, setOperations] = useState<Operation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const deliveries = [
-    { id: "D001", customer: "Customer X", items: 8, status: "ready", date: "2024-01-20" },
-    { id: "D002", customer: "Customer Y", items: 2, status: "draft", date: "2024-01-21" },
-  ];
+  useEffect(() => {
+    loadOperations();
+  }, []);
 
-  const transfers = [
-    { id: "T001", from: "Warehouse A", to: "Production", items: 4, status: "done", date: "2024-01-20" },
-    { id: "T002", from: "Main Store", to: "Warehouse B", items: 6, status: "waiting", date: "2024-01-21" },
-  ];
+  const loadOperations = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('Authentication required');
+      }
 
-  const adjustments = [
-    { id: "A001", product: "Steel Rods", quantity: -5, reason: "Damaged", status: "done", date: "2024-01-19" },
-    { id: "A002", product: "Paint Cans", quantity: 10, reason: "Count Correction", status: "done", date: "2024-01-20" },
-  ];
+      const token = await user.getIdToken();
+      const response = await fetch('http://localhost:5000/api/operations', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setOperations(data.operations || []);
+          toast.success(`Loaded ${data.operations?.length || 0} operations successfully!`);
+        } else {
+          throw new Error(data.message || 'Failed to load operations');
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Server error occurred');
+      }
+    } catch (error: any) {
+      console.error('Failed to load operations:', error);
+      setError(`Failed to load operations: ${error.message}`);
+      toast.error(`Failed to load operations: ${error.message}`);
+      setOperations([]); // No fallback - completely dynamic
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Filter operations by type
+  const receipts = operations.filter(op => op.type === 'receipt');
+  const deliveries = operations.filter(op => op.type === 'delivery');
+  const transfers = operations.filter(op => op.type === 'transfer');
+  const adjustments = operations.filter(op => op.type === 'adjustment');
+
+  // Refresh operations
+  const handleRefresh = () => {
+    loadOperations();
+  };
+
+  // Create new operation
+  const handleCreateOperation = async (type: string) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        toast.error('Authentication required');
+        return;
+      }
+
+      const token = await user.getIdToken();
+      const response = await fetch('http://localhost:5000/api/operations', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type: type,
+          createdBy: user.uid
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success(`New ${type} operation created!`);
+          loadOperations(); // Reload operations
+        } else {
+          throw new Error(data.message);
+        }
+      } else {
+        throw new Error('Failed to create operation');
+      }
+    } catch (error: any) {
+      console.error('Failed to create operation:', error);
+      toast.error(`Failed to create operation: ${error.message}`);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     const colors = {
@@ -45,6 +142,17 @@ const Operations = () => {
     return colors[status as keyof typeof colors] || colors.draft;
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <span>Loading operations...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -53,6 +161,19 @@ const Operations = () => {
           <p className="text-muted-foreground mt-1">
             Manage receipts, deliveries, transfers, and adjustments
           </p>
+          {error && (
+            <p className="text-yellow-600 text-sm mt-1">⚠️ {error}</p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={handleRefresh} variant="outline" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+          <Button className="gap-2" onClick={() => handleCreateOperation('general')}>
+            <Plus className="h-4 w-4" />
+            New Operation
+          </Button>
         </div>
       </div>
 
@@ -81,7 +202,7 @@ const Operations = () => {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Incoming Goods Receipts</CardTitle>
-                <Button className="bg-gradient-primary">
+                <Button className="bg-gradient-primary" onClick={() => handleCreateOperation('receipt')}>
                   <Plus className="mr-2 h-4 w-4" />
                   New Receipt
                 </Button>
@@ -125,7 +246,7 @@ const Operations = () => {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Outgoing Delivery Orders</CardTitle>
-                <Button className="bg-gradient-primary">
+                <Button className="bg-gradient-primary" onClick={() => handleCreateOperation('delivery')}>
                   <Plus className="mr-2 h-4 w-4" />
                   New Delivery
                 </Button>
@@ -169,7 +290,7 @@ const Operations = () => {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Internal Transfers</CardTitle>
-                <Button className="bg-gradient-primary">
+                <Button className="bg-gradient-primary" onClick={() => handleCreateOperation('transfer')}>
                   <Plus className="mr-2 h-4 w-4" />
                   New Transfer
                 </Button>
@@ -215,7 +336,7 @@ const Operations = () => {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Inventory Adjustments</CardTitle>
-                <Button className="bg-gradient-primary">
+                <Button className="bg-gradient-primary" onClick={() => handleCreateOperation('adjustment')}>
                   <Plus className="mr-2 h-4 w-4" />
                   New Adjustment
                 </Button>

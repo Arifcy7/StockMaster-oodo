@@ -3,32 +3,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Package, Mail, Lock, User } from "lucide-react";
+import { Package, Mail, Lock, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/services/firebase";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
+import { auth } from "@/firebase/config";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const Auth = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [loginData, setLoginData] = useState({ email: "", password: "" });
-  const [signupData, setSignupData] = useState({ 
-    email: "", 
-    password: "", 
-    firstName: "", 
-    lastName: "", 
-    role: "",
-    department: "" 
-  });
+  const [resetEmail, setResetEmail] = useState("");
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -41,7 +28,25 @@ const Auth = () => {
         loginData.password
       );
       
-      toast.success(`Welcome back, ${userCredential.user.email}!`);
+      // Check if user exists in backend and get role
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/profile', {
+          headers: {
+            'Authorization': `Bearer ${await userCredential.user.getIdToken()}`
+          }
+        });
+        
+        if (response.ok) {
+          const userData = await response.json();
+          toast.success(`Welcome back, ${userData.user.firstName || userCredential.user.email}!`);
+        } else {
+          toast.success(`Welcome back, ${userCredential.user.email}!`);
+        }
+      } catch (profileError) {
+        console.log("Profile fetch failed, continuing with basic login");
+        toast.success(`Welcome back, ${userCredential.user.email}!`);
+      }
+      
       navigate("/dashboard");
     } catch (error: any) {
       console.error("Login error:", error);
@@ -51,33 +56,18 @@ const Auth = () => {
     }
   };
 
-  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleForgotPassword = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        signupData.email,
-        signupData.password
-      );
-      
-      // TODO: Save additional user data to backend
-      const userData = {
-        uid: userCredential.user.uid,
-        email: signupData.email,
-        firstName: signupData.firstName,
-        lastName: signupData.lastName,
-        role: signupData.role,
-        department: signupData.department
-      };
-      
-      console.log("User data to save:", userData);
-      toast.success("Account created successfully!");
-      navigate("/dashboard");
+      await sendPasswordResetEmail(auth, resetEmail);
+      toast.success("Password reset email sent! Check your inbox.");
+      setShowForgotPassword(false);
+      setResetEmail("");
     } catch (error: any) {
-      console.error("Signup error:", error);
-      toast.error(error.message || "Signup failed. Please try again.");
+      console.error("Password reset error:", error);
+      toast.error(error.message || "Failed to send password reset email.");
     } finally {
       setIsLoading(false);
     }
@@ -101,19 +91,61 @@ const Auth = () => {
 
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Welcome Back</CardTitle>
+            <CardTitle>{showForgotPassword ? "Reset Password" : "Welcome Back"}</CardTitle>
             <CardDescription>
-              Sign in to your account or create a new one
+              {showForgotPassword 
+                ? "Enter your email to receive a password reset link"
+                : "Sign in to your account"
+              }
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="login" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="login">Login</TabsTrigger>
-                <TabsTrigger value="signup">Sign Up</TabsTrigger>
-              </TabsList>
+            {showForgotPassword ? (
+              /* Forgot Password Form */
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="reset-email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="reset-email"
+                      type="email"
+                      placeholder="your@email.com"
+                      className="pl-9"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
 
-              <TabsContent value="login">
+                <Button
+                  type="submit"
+                  className="w-full bg-gradient-primary"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Sending..." : "Send Reset Email"}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="link"
+                  className="w-full text-sm text-muted-foreground"
+                  onClick={() => setShowForgotPassword(false)}
+                >
+                  Back to Login
+                </Button>
+              </form>
+            ) : (
+              /* Login Form */
+              <div className="space-y-4">
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Only registered users can access the system. New accounts must be created by an administrator.
+                  </AlertDescription>
+                </Alert>
+
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="login-email">Email</Label>
@@ -159,141 +191,22 @@ const Auth = () => {
                     type="button"
                     variant="link"
                     className="w-full text-sm text-muted-foreground"
+                    onClick={() => setShowForgotPassword(true)}
                   >
                     Forgot password?
                   </Button>
                 </form>
-              </TabsContent>
-
-              <TabsContent value="signup">
-                <form onSubmit={handleSignup} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-firstname">First Name</Label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="signup-firstname"
-                          type="text"
-                          placeholder="John"
-                          className="pl-9"
-                          value={signupData.firstName}
-                          onChange={(e) => setSignupData(prev => ({ ...prev, firstName: e.target.value }))}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-lastname">Last Name</Label>
-                      <Input
-                        id="signup-lastname"
-                        type="text"
-                        placeholder="Doe"
-                        value={signupData.lastName}
-                        onChange={(e) => setSignupData(prev => ({ ...prev, lastName: e.target.value }))}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-email"
-                        type="email"
-                        placeholder="your@email.com"
-                        className="pl-9"
-                        value={signupData.email}
-                        onChange={(e) => setSignupData(prev => ({ ...prev, email: e.target.value }))}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-password"
-                        type="password"
-                        placeholder="••••••••"
-                        className="pl-9"
-                        value={signupData.password}
-                        onChange={(e) => setSignupData(prev => ({ ...prev, password: e.target.value }))}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-role">Role</Label>
-                    <Select value={signupData.role} onValueChange={(value) => setSignupData(prev => ({ ...prev, role: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="manager">Inventory Manager</SelectItem>
-                        <SelectItem value="staff">Warehouse Staff</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-department">Department</Label>
-                    <Select value={signupData.department} onValueChange={(value) => setSignupData(prev => ({ ...prev, department: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="warehouse">Warehouse</SelectItem>
-                        <SelectItem value="procurement">Procurement</SelectItem>
-                        <SelectItem value="sales">Sales</SelectItem>
-                        <SelectItem value="logistics">Logistics</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-password"
-                        type="password"
-                        placeholder="••••••••"
-                        className="pl-9"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <Button
-                    type="submit"
-                    className="w-full bg-gradient-primary"
-                    disabled={isLoading}
-                  >
-                    {isLoading ? "Creating account..." : "Create Account"}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Firebase Integration Notice */}
-        <Card className="mt-4 border-primary/20 bg-primary/5">
-          <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground text-center">
-              🔥 Firebase Authentication integration point ready. Connect your Firebase project 
-              to enable secure authentication with email/password and OTP-based password reset.
-            </p>
-          </CardContent>
-        </Card>
+        {/* Admin Info */}
+        <div className="mt-6 text-center">
+          <p className="text-xs text-muted-foreground">
+            Need an account? Contact your system administrator.
+          </p>
+        </div>
       </div>
     </div>
   );
